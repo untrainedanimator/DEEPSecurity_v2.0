@@ -1,0 +1,9 @@
+-r requirements.txt
+
+# Test + lint + type-check (pure-Python, wheel-available everywhere).
+pytest>=8.3
+pytest-cov>=6.0
+pytest-mock>=3.14
+ruff>=0.8
+mypy>=1.13
+pre-commit>=4.0

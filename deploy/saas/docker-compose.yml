@@ -1,0 +1,91 @@
+# docker-compose for the SaaS control plane.
+#
+# What this brings up:
+#   - Caddy reverse proxy with automatic Let's Encrypt TLS
+#   - DEEPSecurity API (gunicorn + Flask) on internal network only
+#   - PostgreSQL with a healthcheck + named-volume persistence
+#
+# Bring up:
+#     cp .env.saas.example .env
+#     # fill DEEPSEC_DOMAIN, POSTGRES_PASSWORD, DEEPSEC_SECRET_KEY, DEEPSEC_JWT_SECRET, DEEPSEC_DEV_PASSWORD
+#     docker compose -f deploy/saas/docker-compose.yml up -d
+
+services:
+  caddy:
+    image: caddy:2
+    container_name: deepsec-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DEEPSEC_DOMAIN: ${DEEPSEC_DOMAIN:?set DEEPSEC_DOMAIN (e.g. deepsec.example.com)}
+      ACME_EMAIL: ${ACME_EMAIL:?set ACME_EMAIL for Let's Encrypt}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      api:
+        condition: service_healthy
+
+  api:
+    build:
+      context: ../..
+      dockerfile: deploy/Dockerfile
+    image: deepsecurity:saas
+    container_name: deepsec-api
+    restart: unless-stopped
+    expose:
+      - "5000"
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DEEPSEC_ENV: production
+      DEEPSEC_HOST: 0.0.0.0
+      DEEPSEC_PORT: "5000"
+      DEEPSEC_SECRET_KEY: ${DEEPSEC_SECRET_KEY:?set DEEPSEC_SECRET_KEY}
+      DEEPSEC_JWT_SECRET: ${DEEPSEC_JWT_SECRET:?set DEEPSEC_JWT_SECRET}
+      DEEPSEC_CORS_ORIGINS: https://${DEEPSEC_DOMAIN}
+      DEEPSEC_DATABASE_URL: postgresql+psycopg://deepsec:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@db:5432/deepsec
+      DEEPSEC_SCAN_ROOT: ""   # SaaS server never scans its own disk
+      DEEPSEC_DEV_USER: ${DEEPSEC_DEV_USER:-admin}
+      DEEPSEC_DEV_PASSWORD: ${DEEPSEC_DEV_PASSWORD:?set DEEPSEC_DEV_PASSWORD}
+      DEEPSEC_DEV_ROLE: admin
+      DEEPSEC_LOG_LEVEL: INFO
+      DEEPSEC_LOG_JSON: "true"
+      DEEPSEC_INTEGRITY_CHECK_ON_BOOT: "true"
+      DEEPSEC_RATE_LIMIT_ANON_PER_MINUTE: "10"   # tighter for the public server
+      DEEPSEC_RATE_LIMIT_AUTH_PER_MINUTE: "300"
+    volumes:
+      - deepsec-data:/app/data
+      - deepsec-logs:/app/logs
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5000/healthz', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  db:
+    image: postgres:16-alpine
+    container_name: deepsec-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: deepsec
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+      POSTGRES_DB: deepsec
+    volumes:
+      - deepsec-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U deepsec -d deepsec"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  deepsec-data:
+  deepsec-logs:
+  deepsec-pgdata:
+  caddy-data:
+  caddy-config:

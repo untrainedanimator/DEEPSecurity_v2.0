@@ -1,0 +1,70 @@
+services:
+  api:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    image: deepsecurity:latest
+    container_name: deepsec-api
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DEEPSEC_ENV: production
+      DEEPSEC_SECRET_KEY: ${DEEPSEC_SECRET_KEY:?set DEEPSEC_SECRET_KEY in .env}
+      DEEPSEC_JWT_SECRET: ${DEEPSEC_JWT_SECRET:?set DEEPSEC_JWT_SECRET in .env}
+      DEEPSEC_HOST: 0.0.0.0
+      DEEPSEC_PORT: "5000"
+      DEEPSEC_CORS_ORIGINS: ${DEEPSEC_CORS_ORIGINS:-http://localhost:5173}
+      # Default to postgres via the service below. Switch back to SQLite by
+      # setting DEEPSEC_DATABASE_URL=sqlite:////app/data/deepscan.db in .env.
+      DEEPSEC_DATABASE_URL: ${DEEPSEC_DATABASE_URL:-postgresql+psycopg://deepsec:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@db:5432/deepsec}
+      DEEPSEC_SCAN_ROOT: /app/samples
+      DEEPSEC_QUARANTINE_DIR: /app/quarantine
+      DEEPSEC_SAFELIST_DIR: /app/safelist
+      DEEPSEC_DELETED_DIR: /app/deleted
+      DEEPSEC_SIGNATURE_PATH: /app/data/signatures.txt
+      DEEPSEC_LOG_LEVEL: INFO
+      DEEPSEC_LOG_JSON: "true"
+      DEEPSEC_DEV_USER: ${DEEPSEC_DEV_USER:-admin}
+      DEEPSEC_DEV_PASSWORD: ${DEEPSEC_DEV_PASSWORD:?set a real password or wire your IdP}
+      DEEPSEC_DEV_ROLE: ${DEEPSEC_DEV_ROLE:-admin}
+    volumes:
+      - deepsec-data:/app/data
+      - deepsec-quarantine:/app/quarantine
+      - deepsec-logs:/app/logs
+      # Mount the folder you actually want to scan, read-only from the container.
+      - ${DEEPSEC_SCAN_SOURCE:-./samples}:/app/samples:ro
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5000/healthz', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  db:
+    image: postgres:16-alpine
+    container_name: deepsec-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: deepsec
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: deepsec
+    volumes:
+      - deepsec-pgdata:/var/lib/postgresql/data
+    # Never expose postgres to the host network in production.
+    # Uncomment only for local debugging.
+    # ports:
+    #   - "127.0.0.1:5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U deepsec -d deepsec"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  deepsec-data:
+  deepsec-quarantine:
+  deepsec-logs:
+  deepsec-pgdata:

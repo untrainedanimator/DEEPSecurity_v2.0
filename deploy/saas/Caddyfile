@@ -1,0 +1,25 @@
+# Caddy reverse proxy for DEEPSecurity SaaS.
+# Auto-provisions a Let's Encrypt TLS cert for DEEPSEC_DOMAIN.
+
+{$DEEPSEC_DOMAIN} {
+    encode zstd gzip
+
+    # TLS via Let's Encrypt (ACME).
+    tls {$ACME_EMAIL}
+
+    # Security headers that layer on top of Flask's own.
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "DENY"
+        Referrer-Policy "no-referrer"
+        -Server
+    }
+
+    # Proxy everything to the Flask API.
+    reverse_proxy api:5000 {
+        # Pass the client IP through so our rate-limiter keys on the real caller.
+        header_up X-Forwarded-For {remote_host}
+        header_up X-Real-IP {remote_host}
+    }
+}

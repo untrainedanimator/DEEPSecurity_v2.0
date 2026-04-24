@@ -1,0 +1,108 @@
+# render.yaml — Blueprint for deploying DEEPSecurity to Render.com.
+#
+# How to use:
+#   1. Push this repo to GitHub.
+#   2. On render.com → New → Blueprint → connect the repo.
+#   3. Render reads this file, provisions the service + disk, and asks you
+#      for any missing env values (the ones marked `generateValue: true`
+#      below are auto-generated; others you fill in the UI once).
+#   4. First deploy builds from deploy/Dockerfile. ~3–5 minutes.
+#   5. Add a custom domain in the service's Settings → Custom Domains:
+#        app.deepsjvb.net  → CNAME to the onrender.com URL Render gives you.
+#      Render auto-issues a TLS cert.
+#
+# Cost as configured:
+#   Web Service (Starter):   $7/month
+#   Persistent Disk (1 GB):  ~$0.25/month
+#   TOTAL:                   ~$7.25/month
+
+services:
+  - type: web
+    name: deepsecurity
+    runtime: docker
+    dockerfilePath: ./deploy/Dockerfile
+    dockerContext: .
+    plan: starter                 # $7/mo. Upgrade to `standard` ($25) if 512MB is too tight.
+    region: oregon                # change to ohio/frankfurt/singapore if closer to you
+    healthCheckPath: /healthz
+    autoDeploy: true
+    numInstances: 1
+
+    envVars:
+      # --- core ---
+      - key: DEEPSEC_ENV
+        value: production
+      - key: DEEPSEC_HOST
+        value: 0.0.0.0
+      - key: DEEPSEC_PORT
+        value: "5000"
+
+      # Auto-generated on first deploy. Never re-generated on redeploy.
+      - key: DEEPSEC_SECRET_KEY
+        generateValue: true
+      - key: DEEPSEC_JWT_SECRET
+        generateValue: true
+
+      # --- you fill these in Render's UI after the first deploy ---
+      # DEEPSEC_DEV_USER — default "admin" is fine
+      - key: DEEPSEC_DEV_USER
+        value: admin
+      # This you set via the UI as a "secret" env var. Don't commit a real one here.
+      - key: DEEPSEC_DEV_PASSWORD
+        sync: false
+      - key: DEEPSEC_DEV_ROLE
+        value: admin
+
+      # --- CORS — comes back to this once you know your Render URL ---
+      # After first deploy Render gives you <name>.onrender.com. Set this to
+      # that plus your custom domain when wired, e.g.
+      # https://deepsecurity.onrender.com,https://app.deepsjvb.net
+      - key: DEEPSEC_CORS_ORIGINS
+        sync: false
+
+      # --- database ---
+      # SQLite on the mounted disk. Cheapest and fine for single-node
+      # SaaS testing. Swap for a Render Managed Postgres later if you keep it.
+      - key: DEEPSEC_DATABASE_URL
+        value: sqlite:////var/data/deepscan.db
+
+      # --- scanner (SaaS server never scans its own disk) ---
+      - key: DEEPSEC_SCAN_ROOT
+        value: ""
+      - key: DEEPSEC_QUARANTINE_DIR
+        value: /var/data/quarantine
+      - key: DEEPSEC_SAFELIST_DIR
+        value: /var/data/safelist
+      - key: DEEPSEC_DELETED_DIR
+        value: /var/data/deleted
+      - key: DEEPSEC_SIGNATURE_PATH
+        value: /var/data/signatures.txt
+      - key: DEEPSEC_IP_REPUTATION_PATH
+        value: /var/data/ip_reputation.txt
+      - key: DEEPSEC_INTEGRITY_SNAPSHOT_PATH
+        value: /var/data/.integrity.json
+
+      # --- logging + rate limits + retention ---
+      - key: DEEPSEC_LOG_LEVEL
+        value: INFO
+      - key: DEEPSEC_LOG_JSON
+        value: "true"
+      - key: DEEPSEC_RATE_LIMIT_ANON_PER_MINUTE
+        value: "10"
+      - key: DEEPSEC_RATE_LIMIT_AUTH_PER_MINUTE
+        value: "300"
+      - key: DEEPSEC_RETENTION_DAYS
+        value: "90"
+
+      # --- intel feeds + integrity ---
+      - key: DEEPSEC_INTEL_MALWAREBAZAAR_ENABLED
+        value: "true"
+      - key: DEEPSEC_IP_REPUTATION_ENABLED
+        value: "true"
+      - key: DEEPSEC_INTEGRITY_CHECK_ON_BOOT
+        value: "true"
+
+    disk:
+      name: deepsec-data
+      mountPath: /var/data
+      sizeGB: 1

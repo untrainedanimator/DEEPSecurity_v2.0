@@ -1,0 +1,26 @@
+{
+  "name": "deepsecurity-frontend",
+  "private": true,
+  "version": "2.1.0",
+  "type": "module",
+  "description": "Minimal React dashboard for DEEPSecurity — live scan, quarantine, audit log.",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "lint": "eslint src"
+  },
+  "dependencies": {
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^4.3.4",
+    "eslint": "^9.17.0",
+    "eslint-plugin-react-hooks": "^5.1.0",
+    "eslint-plugin-react-refresh": "^0.4.16",
+    "vite": "^6.0.7"
+  }
+}

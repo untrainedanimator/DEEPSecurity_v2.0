@@ -1,0 +1,153 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "deepsecurity"
+version = "2.4.0"
+description = "User-space policy, DLP, and compliance overlay for endpoints — runs alongside your AV, not a replacement. MITRE-tagged detections, SIEM-ready events, audit trails, and compliance reporting."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "Dino" }]
+keywords = ["security", "dlp", "compliance", "audit", "policy", "mitre-attack", "siem"]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Intended Audience :: System Administrators",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Security",
+]
+dependencies = [
+  "Flask>=3.0,<4.0",
+  "flask-cors>=5.0",
+  "flask-jwt-extended>=4.7",
+  "gunicorn>=23.0",
+  "SQLAlchemy>=2.0,<3.0",
+  "pydantic>=2.11,<3.0",
+  "pydantic-settings>=2.6,<3.0",
+  "python-dotenv>=1.0",
+  "joblib>=1.3",
+  "psutil>=6.0",
+  "structlog>=24.0",
+  "click>=8.1",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.3",
+  "pytest-cov>=6.0",
+  "pytest-mock>=3.14",
+  "ruff>=0.8",
+  "mypy>=1.13",
+  "pre-commit>=4.0",
+]
+# ML layer — requires scikit-learn (pulls numpy + scipy).
+# Only needed if you actually load a sklearn model via DEEPSEC_ML_MODEL_PATH.
+# On Python 3.14, these don't have Windows wheels yet — use Python 3.12.
+ml = [
+  "scikit-learn>=1.4",
+  "numpy>=1.26",
+]
+# Real-time watchdog.
+watchdog = ["watchdog>=4.0"]
+# YARA rules.
+yara = ["yara-python>=4.5"]
+# Outlook attachment scanner — Windows only.
+windows = ["pywin32; sys_platform == 'win32'"]
+# PostgreSQL driver — required if DEEPSEC_DATABASE_URL points at postgres.
+postgres = ["psycopg[binary]>=3.2"]
+# Everything the scanner can do, enabled.
+all = [
+  "scikit-learn>=1.4",
+  "numpy>=1.26",
+  "watchdog>=4.0",
+  "yara-python>=4.5",
+  "psycopg[binary]>=3.2",
+  "pywin32; sys_platform == 'win32'",
+]
+
+[project.scripts]
+deepsec = "deepsecurity.cli:main"
+deepsecurity = "deepsecurity.cli:main"
+deepsec-agent = "deepsecurity.agent.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/your-account/deepsecurity"
+Issues = "https://github.com/your-account/deepsecurity/issues"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["deepsecurity*"]
+exclude = ["tests*", "_legacy*", "frontend*", "deploy*"]
+
+# --- Tooling --------------------------------------------------------------
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+addopts = "-ra --strict-markers --strict-config"
+testpaths = ["tests"]
+pythonpath = ["."]
+markers = [
+  "slow: tests that need real OS artefacts (processes, rate-storms). Skipped by default.",
+]
+filterwarnings = [
+  "error",
+  "ignore::DeprecationWarning:flask_socketio.*",
+  "ignore::DeprecationWarning:engineio.*",
+  # SQLAlchemy's QueuePool keeps a small set of sqlite3.Connection
+  # objects alive between sessions. When pytest tears down the process
+  # the Python GC finalises them and emits ResourceWarning("unclosed
+  # database ..."). That's a GC-timing artefact on Python 3.14, NOT a
+  # real connection leak — our conftest teardown calls engine.dispose()
+  # and gc.collect() explicitly. The warning otherwise gets promoted
+  # to error by the "error" filter above and crashes pytest cleanup
+  # after every green run.
+  "ignore:unclosed database:ResourceWarning",
+  # Same cause, different pytest wrapper — the unraisable-exception
+  # collector wraps the ResourceWarning in its own class.
+  "ignore::pytest.PytestUnraisableExceptionWarning",
+]
+
+[tool.coverage.run]
+branch = true
+source = ["deepsecurity"]
+omit = ["deepsecurity/cli.py", "deepsecurity/outlook.py"]
+
+[tool.coverage.report]
+exclude_lines = [
+  "pragma: no cover",
+  "raise NotImplementedError",
+  "if TYPE_CHECKING:",
+  "if __name__ == .__main__.:",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+extend-exclude = ["_legacy", "frontend", "models", "data"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "S", "C4", "SIM", "PTH", "RUF"]
+ignore = [
+  "S101",  # allow assert in tests
+  "S105",  # hardcoded password warnings — we use strict settings
+  "S603",  # subprocess without shell — we sanitise
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S101", "S106", "S311"]
+"scripts/*" = ["S101"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+files = ["deepsecurity"]
+exclude = ["_legacy/", "frontend/", "tests/fixtures/"]
+plugins = ["pydantic.mypy"]
+
+[[tool.mypy.overrides]]
+module = ["joblib.*", "psutil.*", "flask_socketio.*", "sklearn.*", "pythoncom.*", "win32com.*"]
+ignore_missing_imports = true

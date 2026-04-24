@@ -1,0 +1,91 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+env/
+ENV/
+.eggs/
+*.egg-info/
+*.egg
+pip-log.txt
+pip-delete-this-directory.txt
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+.tox/
+
+# Runtime / data
+data/*.csv
+data/*.db
+data/*.db-journal
+data/*.db-shm
+data/*.db-wal
+data/*.log
+models/*.pkl
+models/*.joblib
+!models/.gitkeep
+artifacts/
+quarantine/
+safelist/
+deleted/
+logs/
+
+# Secrets
+.env
+.env.*
+!.env.example
+secrets.json
+*.key
+*.pem
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+frontend/build/
+
+# IDE / OS
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+
+# Legacy code kept for reference only — not tracked
+_legacy/
+
+# Heavy dataset
+data/full.csv
+
+# Runtime artifacts introduced in v2.3+
+.deepsec.pid
+data/.integrity.json
+data/.integrity.json.tmp
+data/signatures.history/
+data/ip_reputation.txt
+
+# Agent-side policy cache (FLEET_POLICY, v2.4)
+deepsec-agent.policy.json
+deepsec-agent.policy.json.tmp
+
+# E2E / continuous-test outputs (stay under logs/ which is already
+# ignored, but list explicitly in case someone moves them)
+logs/e2e_*.md
+logs/e2e_pytest_*.log
+logs/continuous_tests.log
+logs/last_run.json
+logs/server.log
+logs/frontend.log
+logs/failure_*.txt
+
+# pytest temp databases that pytest-of-* creates in tmp dirs
+# (not typically in the repo, but hedged)
+test.db
+test.db-journal
