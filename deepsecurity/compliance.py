@@ -14,12 +14,13 @@ Output:
 
 Not included by design: raw file contents. DLP previews are already redacted.
 """
+
 from __future__ import annotations
 
 import csv
 import io
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from sqlalchemy import func
@@ -34,8 +35,8 @@ class DateWindow:
     end: datetime
 
     @classmethod
-    def last_days(cls, days: int) -> "DateWindow":
-        now = datetime.now(timezone.utc)
+    def last_days(cls, days: int) -> DateWindow:
+        now = datetime.now(UTC)
         return cls(start=now - timedelta(days=days), end=now)
 
 
@@ -74,7 +75,7 @@ def generate_report(window: DateWindow) -> dict[str, Any]:
         )
 
     return {
-        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "generated_at": datetime.now(UTC).isoformat(),
         "window": {"start": window.start.isoformat(), "end": window.end.isoformat()},
         "scans": scans_summary,
         "detections": {
@@ -137,7 +138,7 @@ def audit_csv_export(window: DateWindow) -> str:
 
 def purge_older_than(days: int) -> dict[str, int]:
     """Delete audit / result rows older than `days`. Returns deleted counts."""
-    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    cutoff = datetime.now(UTC) - timedelta(days=days)
     with session_scope() as s:
         n_audit = (
             s.query(AuditLog).filter(AuditLog.timestamp < cutoff).delete(synchronize_session=False)

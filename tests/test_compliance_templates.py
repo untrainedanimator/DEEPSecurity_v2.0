@@ -17,10 +17,11 @@ Fixture: the ``initialized_db`` fixture seeds a tmp_path SQLite DB and
 then we add a few audit events + a scan session + a DLP finding so the
 templates have something to report.
 """
+
 from __future__ import annotations
 
 import json
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -31,7 +32,6 @@ from deepsecurity.compliance_templates import REGISTRY, list_templates
 from deepsecurity.db import session_scope
 from deepsecurity.models import Agent, AuditLog, DLPFinding, ScanResult, ScanSession
 
-
 # ---------------------------------------------------------------------------
 # Shared fixtures — seed a representative DB so every template has data.
 # ---------------------------------------------------------------------------
@@ -40,7 +40,7 @@ from deepsecurity.models import Agent, AuditLog, DLPFinding, ScanResult, ScanSes
 def _seed_mixed_data() -> None:
     """Add one scan, one detection, one DLP finding, a handful of audit
     events, and one agent so every template produces a non-empty pack."""
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     with session_scope() as s:
         scan = ScanSession(
             actor="admin",
@@ -80,11 +80,36 @@ def _seed_mixed_data() -> None:
         )
         s.add_all(
             [
-                AuditLog(actor="admin", action="auth.login", status="ok", timestamp=now - timedelta(minutes=30)),
-                AuditLog(actor="anon", action="auth.login", status="denied", timestamp=now - timedelta(minutes=25)),
-                AuditLog(actor="admin", action="scan.start", status="ok", timestamp=now - timedelta(minutes=20)),
-                AuditLog(actor="admin", action="scan.finish", status="ok", timestamp=now - timedelta(minutes=18)),
-                AuditLog(actor="admin", action="quarantine.copied", status="ok", timestamp=now - timedelta(minutes=15)),
+                AuditLog(
+                    actor="admin",
+                    action="auth.login",
+                    status="ok",
+                    timestamp=now - timedelta(minutes=30),
+                ),
+                AuditLog(
+                    actor="anon",
+                    action="auth.login",
+                    status="denied",
+                    timestamp=now - timedelta(minutes=25),
+                ),
+                AuditLog(
+                    actor="admin",
+                    action="scan.start",
+                    status="ok",
+                    timestamp=now - timedelta(minutes=20),
+                ),
+                AuditLog(
+                    actor="admin",
+                    action="scan.finish",
+                    status="ok",
+                    timestamp=now - timedelta(minutes=18),
+                ),
+                AuditLog(
+                    actor="admin",
+                    action="quarantine.copied",
+                    status="ok",
+                    timestamp=now - timedelta(minutes=15),
+                ),
             ]
         )
         s.add(
@@ -141,7 +166,7 @@ def test_list_templates_returns_metadata_only() -> None:
 @pytest.mark.parametrize("template_id", sorted(REGISTRY.keys()))
 def test_template_has_required_metadata(template_id: str) -> None:
     mod = REGISTRY[template_id]
-    assert mod.TEMPLATE_ID == template_id
+    assert template_id == mod.TEMPLATE_ID
     assert isinstance(mod.TITLE, str) and mod.TITLE.strip()
     assert isinstance(mod.CONTROL_REF, str) and mod.CONTROL_REF.strip()
     assert isinstance(mod.DESCRIPTION, str) and len(mod.DESCRIPTION) > 30
@@ -149,9 +174,7 @@ def test_template_has_required_metadata(template_id: str) -> None:
 
 
 @pytest.mark.parametrize("template_id", sorted(REGISTRY.keys()))
-def test_template_build_returns_jsonable_dict(
-    template_id: str, initialized_db: Path
-) -> None:
+def test_template_build_returns_jsonable_dict(template_id: str, initialized_db: Path) -> None:
     _seed_mixed_data()
     mod = REGISTRY[template_id]
     window = DateWindow.last_days(7)
@@ -161,8 +184,7 @@ def test_template_build_returns_jsonable_dict(
     # Must be a dict …
     assert isinstance(payload, dict)
     # … with the five universal metadata keys.
-    for key in ("template_id", "title", "control_ref", "description",
-                "generated_at", "window"):
+    for key in ("template_id", "title", "control_ref", "description", "generated_at", "window"):
         assert key in payload, f"{template_id} build() missing {key!r}"
     assert payload["template_id"] == template_id
     assert payload["window"].get("start") < payload["window"].get("end")
@@ -236,9 +258,7 @@ def test_iso27001_a_12_4_reports_volume(initialized_db: Path) -> None:
 def test_hipaa_164_312_a_1_masks_db_url(initialized_db: Path, monkeypatch) -> None:
     """The 312(a)(1) template must not leak DB passwords even if the
     operator has switched from sqlite to a postgres DSN."""
-    monkeypatch.setenv(
-        "DEEPSEC_DATABASE_URL", "postgres://admin:hunter2@db.x.com:5432/deepsec"
-    )
+    monkeypatch.setenv("DEEPSEC_DATABASE_URL", "postgres://admin:hunter2@db.x.com:5432/deepsec")
     # Force settings to re-read.
     from deepsecurity.config import get_settings
 
@@ -283,19 +303,13 @@ def test_dispatcher_route_returns_200(
 ) -> None:
     _seed_mixed_data()
     c, tok = authed_client
-    r = c.get(
-        f"/api/compliance/template/{template_id}?days=7", headers=_auth(tok)
-    )
-    assert r.status_code == 200, (
-        f"{template_id}: expected 200, got {r.status_code}: {r.get_json()}"
-    )
+    r = c.get(f"/api/compliance/template/{template_id}?days=7", headers=_auth(tok))
+    assert r.status_code == 200, f"{template_id}: expected 200, got {r.status_code}: {r.get_json()}"
     body = r.get_json()
     assert body["template_id"] == template_id
 
 
-def test_dispatcher_unknown_template_returns_404(
-    initialized_db: Path, authed_client
-) -> None:
+def test_dispatcher_unknown_template_returns_404(initialized_db: Path, authed_client) -> None:
     c, tok = authed_client
     r = c.get("/api/compliance/template/does-not-exist", headers=_auth(tok))
     assert r.status_code == 404
@@ -308,20 +322,14 @@ def test_dispatcher_unknown_template_returns_404(
 def test_dispatcher_days_param_is_validated(initialized_db: Path, authed_client) -> None:
     c, tok = authed_client
     # Non-numeric days → 400
-    r = c.get(
-        "/api/compliance/template/soc2-cc6-1?days=abc", headers=_auth(tok)
-    )
+    r = c.get("/api/compliance/template/soc2-cc6-1?days=abc", headers=_auth(tok))
     assert r.status_code == 400
     # Negative clamped to 1 — still returns 200.
-    r = c.get(
-        "/api/compliance/template/soc2-cc6-1?days=-5", headers=_auth(tok)
-    )
+    r = c.get("/api/compliance/template/soc2-cc6-1?days=-5", headers=_auth(tok))
     assert r.status_code == 200
 
 
-def test_dispatcher_pdf_without_weasyprint_returns_501(
-    initialized_db: Path, authed_client
-) -> None:
+def test_dispatcher_pdf_without_weasyprint_returns_501(initialized_db: Path, authed_client) -> None:
     """Operators without weasyprint get a helpful 501, not a crash."""
     import sys
 
@@ -341,9 +349,7 @@ def test_dispatcher_pdf_without_weasyprint_returns_501(
         del sys.modules["weasyprint"]
 
 
-def test_list_templates_route_returns_eight(
-    initialized_db: Path, authed_client
-) -> None:
+def test_list_templates_route_returns_eight(initialized_db: Path, authed_client) -> None:
     c, tok = authed_client
     r = c.get("/api/compliance/templates", headers=_auth(tok))
     assert r.status_code == 200

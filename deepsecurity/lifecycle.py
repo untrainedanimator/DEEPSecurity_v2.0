@@ -23,6 +23,7 @@ Design notes:
     - ``clean`` builds a plan first so the confirmation prompt shows
       exactly what's about to disappear.
 """
+
 from __future__ import annotations
 
 import json
@@ -37,7 +38,6 @@ import urllib.request
 import webbrowser
 from dataclasses import dataclass, field
 from pathlib import Path
-
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 FRONTEND_DIR = REPO_ROOT / "frontend"
@@ -140,10 +140,21 @@ def _pid_alive(pid: int | None) -> bool:
 
 
 def _http_ok(url: str, path: str = "/", timeout: float = 1.5) -> bool:
-    """Does ``url + path`` answer with any 2xx/3xx response?"""
+    """Does ``url + path`` answer with any 2xx/3xx response?
+
+    For ``https://`` URLs, the call uses an SSL context that accepts
+    self-signed certs. The lifecycle layer is talking to its own
+    backend on loopback — verifying the cert here doesn't add security,
+    and it would make ``--tls-self-signed`` fail its own health probe.
+    """
     try:
         full = url.rstrip("/") + path
-        with urllib.request.urlopen(full, timeout=timeout) as r:
+        ctx = None
+        if full.startswith("https://"):
+            from deepsecurity.tls_runtime import insecure_ssl_context
+
+            ctx = insecure_ssl_context()
+        with urllib.request.urlopen(full, timeout=timeout, context=ctx) as r:
             return 200 <= r.status < 400
     except urllib.error.HTTPError:
         # 4xx/5xx means the server is up but the route disagrees — still "up".
@@ -300,10 +311,66 @@ def _wait_for(predicate, timeout: float, probe_proc: subprocess.Popen | None = N
     return False
 
 
+def _resolve_tls_args(host: str) -> tuple[str, list[str]]:
+    """Resolve TLS configuration for the backend spawn.
+
+    Returns ``(scheme, extra_flask_args)``. Honours settings.tls_mode:
+
+      * ``off``           → ("http", [])
+      * ``cert``          → ("https", ["--cert", "...", "--key", "..."])
+      * ``self-signed``  → generate cert if needed; same as ``cert``
+
+    Raises ``RuntimeError`` if the operator misconfigured TLS (e.g.
+    mode=cert but no paths set).
+    """
+    from deepsecurity.config import settings
+
+    mode = settings.tls_mode
+    if mode == "off":
+        return "http", []
+
+    if mode == "cert":
+        if not settings.tls_cert or not settings.tls_key:
+            raise RuntimeError(
+                "DEEPSEC_TLS_MODE=cert requires DEEPSEC_TLS_CERT and DEEPSEC_TLS_KEY"
+            )
+        cert_path = Path(settings.tls_cert).resolve()
+        key_path = Path(settings.tls_key).resolve()
+        if not cert_path.exists() or not key_path.exists():
+            raise RuntimeError(
+                f"TLS cert/key not found: cert={cert_path} key={key_path}"
+            )
+        return "https", ["--cert", str(cert_path), "--key", str(key_path)]
+
+    if mode == "self-signed":
+        from deepsecurity.tls_runtime import (
+            default_cert_path,
+            default_key_path,
+            ensure_self_signed_cert,
+        )
+
+        cert_path = (
+            Path(settings.tls_cert).resolve() if settings.tls_cert else default_cert_path()
+        )
+        key_path = (
+            Path(settings.tls_key).resolve() if settings.tls_key else default_key_path()
+        )
+        cert_path, key_path = ensure_self_signed_cert(
+            host=host,
+            cert_path=cert_path,
+            key_path=key_path,
+            valid_days=settings.tls_self_signed_days,
+        )
+        return "https", ["--cert", str(cert_path), "--key", str(key_path)]
+
+    raise RuntimeError(f"unknown DEEPSEC_TLS_MODE: {mode!r}")
+
+
 def _spawn_backend(host: str, port: int) -> tuple[int, str]:
     """Start the Flask backend in the background. Returns (pid, url)."""
     LOG_DIR.mkdir(parents=True, exist_ok=True)
-    url = f"http://{host}:{port}"
+    scheme, tls_args = _resolve_tls_args(host)
+    url = f"{scheme}://{host}:{port}"
 
     env = os.environ.copy()
     env.setdefault("FLASK_APP", "deepsecurity.api:create_app")
@@ -313,7 +380,7 @@ def _spawn_backend(host: str, port: int) -> tuple[int, str]:
     env["DEEPSEC_PORT"] = str(port)
 
     log_handle = SERVER_LOG.open("a", encoding="utf-8", buffering=1)
-    log_handle.write(f"\n=== backend start  host={host} port={port} ===\n")
+    log_handle.write(f"\n=== backend start  host={host} port={port} scheme={scheme} ===\n")
 
     creationflags, start_new_session = _detach_flags()
 
@@ -328,6 +395,7 @@ def _spawn_backend(host: str, port: int) -> tuple[int, str]:
             "--port",
             str(port),
             "--no-reload",
+            *tls_args,
         ],
         cwd=str(REPO_ROOT),
         env=env,
@@ -346,12 +414,10 @@ def _spawn_backend(host: str, port: int) -> tuple[int, str]:
         # Child may have died or taken too long; surface a clean error.
         if proc.poll() is not None:
             raise RuntimeError(
-                f"backend exited with code {proc.returncode} during startup; "
-                f"see {SERVER_LOG}"
+                f"backend exited with code {proc.returncode} during startup; see {SERVER_LOG}"
             )
         raise RuntimeError(
-            f"backend did not answer /healthz within 30s; still pid {proc.pid} — "
-            f"see {SERVER_LOG}"
+            f"backend did not answer /healthz within 30s; still pid {proc.pid} — see {SERVER_LOG}"
         )
 
     return proc.pid, url
@@ -367,8 +433,7 @@ def _frontend_available() -> tuple[bool, str]:
         return False, "npm not found on PATH (install Node.js to use the frontend)"
     if not (FRONTEND_DIR / "node_modules").exists():
         return False, (
-            f"{FRONTEND_DIR / 'node_modules'} is missing — run "
-            f"``cd frontend && npm install`` first"
+            f"{FRONTEND_DIR / 'node_modules'} is missing — run ``cd frontend && npm install`` first"
         )
     return True, ""
 
@@ -414,8 +479,7 @@ def _spawn_frontend(port: int = DEFAULT_FRONTEND_PORT) -> tuple[int, str]:
     if not ready:
         if proc.poll() is not None:
             raise RuntimeError(
-                f"frontend exited with code {proc.returncode} during startup; "
-                f"see {FRONTEND_LOG}"
+                f"frontend exited with code {proc.returncode} during startup; see {FRONTEND_LOG}"
             )
         raise RuntimeError(
             f"frontend did not answer on {url} within 60s; still pid {proc.pid} — "
@@ -526,9 +590,7 @@ def _kill(pid: int | None, timeout: float) -> bool:
             try:
                 os.kill(pid, signal.CTRL_BREAK_EVENT)  # type: ignore[attr-defined]
             except (OSError, AttributeError):
-                subprocess.run(
-                    ["taskkill", "/PID", str(pid), "/T"], check=False
-                )
+                subprocess.run(["taskkill", "/PID", str(pid), "/T"], check=False)
         else:
             os.kill(pid, signal.SIGTERM)
     except ProcessLookupError:
@@ -543,9 +605,7 @@ def _kill(pid: int | None, timeout: float) -> bool:
     # Still alive — force.
     try:
         if os.name == "nt":
-            subprocess.run(
-                ["taskkill", "/PID", str(pid), "/T", "/F"], check=False
-            )
+            subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"], check=False)
         else:
             os.kill(pid, signal.SIGKILL)
     except OSError:

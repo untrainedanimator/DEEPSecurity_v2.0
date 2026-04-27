@@ -11,6 +11,7 @@ Root (/):
     Tiny JSON directory so an operator hitting the API in a browser gets
     something helpful instead of a 404.
 """
+
 from __future__ import annotations
 
 from typing import Any
@@ -109,6 +110,9 @@ def index() -> Any:
                     "queue": "POST /api/agents/<id>/commands  (operator)",
                     "revoke": "DELETE /api/agents/<id>  (operator)",
                 },
+                "v3": {
+                    "status": "GET /api/v3/status  (BEASTMODE — EDR + sinks + TLS + platform)",
+                },
             },
         }
     ), 200
@@ -135,7 +139,7 @@ def readyz() -> Any:
         with get_engine().connect() as conn:
             conn.execute(text("SELECT 1"))
         checks["database"] = "ok"
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         checks["database"] = f"error: {type(exc).__name__}"
         overall_ok = False
 

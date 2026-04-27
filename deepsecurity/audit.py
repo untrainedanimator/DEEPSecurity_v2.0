@@ -13,6 +13,7 @@ A single, consistent signature — every caller in the codebase uses this:
 Writes to the `audit_log` table so logs can be queried via the API.
 Also emits a structured log line so they show up in stdout / log aggregators.
 """
+
 from __future__ import annotations
 
 import json
@@ -57,7 +58,7 @@ def audit_log(
                     details=serialised,
                 )
             )
-    except Exception as exc:  # noqa: BLE001 — audit must never raise
+    except Exception as exc:
         _log.warning(
             "audit.persist_failed",
             actor=actor,
@@ -74,3 +75,25 @@ def audit_log(
         file_path=fp,
         **(details or {}),
     )
+
+    # External replication — opt-in. If no DEEPSEC_AUDIT_SINK_* env vars
+    # are set, ``get_global()`` returns None and this is a no-op. The
+    # ``put()`` call is non-blocking (bounded queue, drop-oldest under
+    # pressure) so a slow webhook can never delay the audited action.
+    try:
+        from deepsecurity import audit_sinks
+
+        sink = audit_sinks.get_global()
+        if sink is not None:
+            sink.put(
+                audit_sinks.make_event(
+                    actor=actor,
+                    action=action,
+                    status=status,
+                    file_path=fp,
+                    details=details,
+                )
+            )
+    except Exception as exc:
+        # never crash the audited action — best-effort sink dispatch
+        _log.warning("audit.sink_dispatch_failed", error=f"{type(exc).__name__}: {exc}")

@@ -18,12 +18,13 @@ Run:
   deepsec integrity check     # compare and report
   /api/system/integrity       # same, via API
 """
+
 from __future__ import annotations
 
 import hashlib
 import json
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -117,8 +118,7 @@ def _current_fingerprint() -> dict[str, str]:
     """
     files = _walk_package()
     out: dict[str, str] = {
-        str(p.relative_to(_PACKAGE_ROOT.parent)).replace("\\", "/"): _hash_file(p)
-        for p in files
+        str(p.relative_to(_PACKAGE_ROOT.parent)).replace("\\", "/"): _hash_file(p) for p in files
     }
 
     repo_root = _PACKAGE_ROOT.parent
@@ -139,7 +139,7 @@ def snapshot() -> IntegrityReport:
     path = settings.integrity_snapshot_path
     path.parent.mkdir(parents=True, exist_ok=True)
     payload = {
-        "created_at": datetime.now(timezone.utc).isoformat(),
+        "created_at": datetime.now(UTC).isoformat(),
         "package_root": str(_PACKAGE_ROOT.parent),
         "files": snap,
     }

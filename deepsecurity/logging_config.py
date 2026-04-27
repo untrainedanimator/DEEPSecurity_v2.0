@@ -6,6 +6,7 @@ Two modes:
 
 Call `configure_logging()` exactly once, at application startup.
 """
+
 from __future__ import annotations
 
 import logging

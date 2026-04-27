@@ -3,6 +3,7 @@
 The single most important test: a JPEG-like high-entropy file is NOT quarantined
 just because it has high entropy. This is the bug that ate the user's music library.
 """
+
 from __future__ import annotations
 
 import os
@@ -21,7 +22,6 @@ from deepsecurity.scanner import (
     scan_directory,
     scan_file,
 )
-
 
 # --- SHA-256 helpers --------------------------------------------------------
 
@@ -149,9 +149,10 @@ def test_signature_match_quarantines(tmp_path: Path) -> None:
 # --- Quarantine round-trip --------------------------------------------------
 
 
-def test_quarantine_then_restore_round_trip(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_quarantine_then_restore_round_trip(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     # Put the quarantine dir under tmp_path.
-    from deepsecurity import config as cfg_mod
 
     qdir = tmp_path / "quarantine"
     original = tmp_path / "original.txt"

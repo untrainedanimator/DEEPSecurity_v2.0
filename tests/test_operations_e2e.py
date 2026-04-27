@@ -11,6 +11,7 @@ rates) are marked `slow` and skipped by default; run them with
 
 Everything else runs on the default pytest invocation.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -21,7 +22,6 @@ from pathlib import Path
 
 import pytest
 from flask.testing import FlaskClient
-
 
 # ---------------------------------------------------------------------------
 # Test fixtures (on top of conftest.py)
@@ -48,6 +48,26 @@ def authed_client(temp_env: Path) -> tuple[FlaskClient, str]:
 
 def _auth(token: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
+
+
+def _stepup_headers(client: FlaskClient, token: str) -> dict[str, str]:
+    """v3.1 — mint a step-up token so destructive verbs accept the call.
+
+    Destructive endpoints (quarantine restore/delete, audit purge, agent
+    revoke) require ``X-Stepup-Token`` since v3.1. Tests that exercise
+    those endpoints call this helper to obtain the second-factor header
+    via the same /api/auth/stepup flow real operators use.
+    """
+    resp = client.post(
+        "/api/auth/stepup",
+        json={"password": "correct-horse-battery-staple"},
+        headers=_auth(token),
+    )
+    assert resp.status_code == 200, f"stepup mint failed: {resp.get_json()}"
+    return {
+        **_auth(token),
+        "X-Stepup-Token": resp.get_json()["stepup_token"],
+    }
 
 
 # ===========================================================================
@@ -208,9 +228,7 @@ class TestDLPIntegration:
 class TestResponseActions:
     """Quarantine lifecycle, delete-with-reason, session rollback."""
 
-    def test_permanent_delete_requires_reason(
-        self, initialized_db: Path, authed_client
-    ) -> None:
+    def test_permanent_delete_requires_reason(self, initialized_db: Path, authed_client) -> None:
         client, token = authed_client
 
         # Plant a dummy file in quarantine.
@@ -221,11 +239,16 @@ class TestResponseActions:
         dummy = qdir / "dummy_to_delete.bin"
         dummy.write_bytes(b"x")
 
+        # v3.1 — destructive verbs require X-Stepup-Token. Mint it once
+        # and reuse across the three sub-tests; the token is valid for
+        # 5 minutes which is well over the test runtime.
+        stepup = _stepup_headers(client, token)
+
         # No reason → 400.
         resp = client.post(
             "/api/quarantine/delete",
             json={"name": "dummy_to_delete.bin"},
-            headers=_auth(token),
+            headers=stepup,
         )
         assert resp.status_code == 400
         assert resp.get_json()["error"] == "reason_required"
@@ -235,7 +258,7 @@ class TestResponseActions:
         resp = client.post(
             "/api/quarantine/delete",
             json={"name": "dummy_to_delete.bin", "reason": "ok"},
-            headers=_auth(token),
+            headers=stepup,
         )
         assert resp.status_code == 400
         assert dummy.exists()
@@ -247,11 +270,23 @@ class TestResponseActions:
                 "name": "dummy_to_delete.bin",
                 "reason": "verified malicious by analyst",
             },
-            headers=_auth(token),
+            headers=stepup,
         )
         assert resp.status_code == 200
         assert resp.get_json()["deleted"] is True
         assert not dummy.exists()
+
+        # v3.1 — destructive verb without step-up should be 401.
+        dummy2 = qdir / "another_dummy.bin"
+        dummy2.write_bytes(b"y")
+        resp = client.post(
+            "/api/quarantine/delete",
+            json={"name": "another_dummy.bin", "reason": "verify step-up gate"},
+            headers=_auth(token),  # no X-Stepup-Token
+        )
+        assert resp.status_code == 401
+        assert resp.get_json()["error"] == "stepup_required"
+        assert dummy2.exists()  # file untouched on rejected delete
 
     def test_session_rollback_restores_all_quarantined(
         self,
@@ -271,9 +306,7 @@ class TestResponseActions:
         f2 = scan_root / "bad2.bin"
         f2.write_bytes(b"malware B")
         settings.signature_path.parent.mkdir(parents=True, exist_ok=True)
-        settings.signature_path.write_text(
-            compute_sha256(f1) + "\n" + compute_sha256(f2) + "\n"
-        )
+        settings.signature_path.write_text(compute_sha256(f1) + "\n" + compute_sha256(f2) + "\n")
 
         summary = scan_directory(scan_root, actor="test", user_role="admin")
         session_id = summary["session_id"]
@@ -442,7 +475,11 @@ class TestAgentRoundtrip:
         assert any(r["id"] == agent_id for r in rows)
 
         # 9. Operator: revoke. Agent can no longer heartbeat.
-        resp = client.delete(f"/api/agents/{agent_id}", headers=_auth(token))
+        # v3.1 — agent revoke requires X-Stepup-Token.
+        resp = client.delete(
+            f"/api/agents/{agent_id}",
+            headers=_stepup_headers(client, token),
+        )
         assert resp.status_code == 200
         resp = client.post("/api/agents/heartbeat", json={}, headers=agent_headers)
         assert resp.status_code == 401
@@ -578,9 +615,5 @@ class TestSlowOSLevel:
         from deepsecurity.models import AuditLog
 
         with session_scope() as s:
-            rows = (
-                s.query(AuditLog)
-                .filter(AuditLog.action == "ransomware.suspected")
-                .all()
-            )
+            rows = s.query(AuditLog).filter(AuditLog.action == "ransomware.suspected").all()
         assert len(rows) >= 1, "ransomware rate should have tripped at least once"

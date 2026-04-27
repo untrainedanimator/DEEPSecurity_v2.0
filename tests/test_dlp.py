@@ -1,4 +1,5 @@
 """DLP regex engine — positive + negative cases, redaction, severity."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -31,9 +32,7 @@ def test_detects_huggingface_token() -> None:
     # we build the value from pieces instead of having it appear in the
     # source verbatim. The runtime value is identical; the scanner sees
     # only short non-matching fragments.
-    synthetic_token = (
-        "h" + "f_" + "ExampleSyntheticTokenForRegexShape" + "1234567890"
-    )
+    synthetic_token = "h" + "f_" + "ExampleSyntheticTokenForRegexShape" + "1234567890"
     hits = scan_text(f'login("{synthetic_token}")', "/x.py")
     assert any(h.pattern_name == "huggingface_token" for h in hits)
 
@@ -110,7 +109,6 @@ def test_regex_timeout_bails_on_redos_pattern(monkeypatch) -> None:
     same timeout branch, but the worker thread exits quickly once its
     sleep ends. Same code path, bounded wall-clock, zero CPU burn.
     """
-    import re
     import threading
     import time
     import types
@@ -151,7 +149,9 @@ def test_regex_timeout_bails_on_redos_pattern(monkeypatch) -> None:
 
     # The worker thread MUST have actually started — otherwise the test
     # is a tautology (we'd be measuring the time to spawn a thread).
-    assert started.wait(1.0), "worker thread never started; test is not exercising the timeout branch"
+    assert started.wait(1.0), (
+        "worker thread never started; test is not exercising the timeout branch"
+    )
 
     # No hits (pattern timed out before matching), and wall-clock is
     # bounded by the timeout budget — not the pattern's worst case.

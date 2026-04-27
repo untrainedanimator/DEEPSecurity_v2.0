@@ -1,5 +1,305 @@
 # Changelog
 
+## [3.1.0] — Tier-1 hardening sprint (six items, post-GA)
+
+Closes the six "moderate-coverage" rows from the v3.0 threat-coverage
+audit. These are the items where strengthening was high-value and
+low-cost; the deliberate non-goals (full NIDS, application
+allow-listing, ML anomaly detection) remain documented in the threat
+model.
+
+### #1 Code Integrity Guard mitigation
+
+- ``deepsecurity/protection/mitigations.py`` — added the sixth
+  ``SetProcessMitigationPolicy`` call: ``BinarySignaturePolicy``.
+  Default applies AuditMicrosoftSignedOnly (logs unsigned DLL loads,
+  doesn't block — safe to enable unconditionally). Operator opt-in
+  via ``DEEPSEC_MITIGATIONS_CIG_ENFORCE=true`` flips to enforce mode.
+- New CLI flag: ``deepsec protection apply-mitigations --cig-enforce``.
+
+### #2 UAC-bypass detection (R-PE-01)
+
+- ``deepsecurity/realtime/correlator.py`` — new rule fires on
+  process_create when an auto-elevating Windows binary (fodhelper,
+  eventvwr, computerdefaults, sdclt, wsreset, slui, perfmon, sysprep,
+  dccw, cttune, msconfig, mmc, taskmgr, narrator, …) spawns a shell
+  or scripting host (cmd, powershell, pwsh, wscript, cscript, mshta,
+  regsvr32). Severity high, MITRE T1548.002.
+- Added ``_ProcessTree.image_of(pid)`` helper for parent lookups.
+- 5 new tests in ``tests/test_correlator.py`` (positive +
+  3 negatives + unknown-parent fail-closed).
+
+### #3 Production-hardening defaults
+
+- ``deepsecurity/config.py`` — new ``@model_validator`` flips
+  ``protection_twin_enabled`` and ``protection_service_install`` to
+  True when ``DEEPSEC_ENV=production`` AND the operator did not
+  explicitly set them in env. Explicit operator intent (``=false``)
+  always wins.
+- 3 new tests in ``tests/test_config_prod_defaults.py``.
+
+### #4 Lateral-movement auto-block
+
+- New correlator rule ``R-LM-01`` — fires on outbound TCP to a
+  private IP on a lateral protocol port (445 SMB, 139 NetBIOS,
+  3389 RDP, 5985/5986 WinRM, 135 RPC). Severity high, MITRE T1021.
+- ``deepsecurity/realtime/enforcer.py`` — when ``DEEPSEC_LATERAL_MOVEMENT_BLOCK=true``,
+  R-LM-01 detections trigger a Defender Firewall outbound deny rule
+  for the offending image path, audit-logged as
+  ``firewall.lateral_block``.
+- Default OFF — false-positive risk on legitimate IT workflows.
+
+### #5 Step-up auth on destructive verbs
+
+- ``deepsecurity/api/auth.py`` — new endpoint ``POST /api/auth/stepup``
+  takes the operator's password (re-auth) and returns a 5-minute
+  step-up JWT scoped to ``stepup`` only. New decorator ``require_stepup()``
+  reads ``X-Stepup-Token`` from request headers, verifies signature +
+  TTL + cross-user mismatch, refuses on any failure.
+- Decorator applied to four destructive endpoints:
+  ``POST /api/quarantine/restore``, ``POST /api/quarantine/delete``,
+  ``POST /api/compliance/purge``, ``DELETE /api/agents/<id>``.
+
+### #6 YARA-backed memory scanner
+
+- New module ``deepsecurity/memory_scan/yara_scan.py`` — compiles
+  every ``.yar`` / ``.yara`` file under the configured rules dir
+  with mtime-keyed caching, runs them against memory-region bytes,
+  surfaces matches as a typed ``YaraMatch`` dataclass.
+- ``inspector.scan_pid`` extended — when ``DEEPSEC_MEMORY_SCAN_YARA_ENABLED=true``
+  AND yara-python is installed, every memory region is also matched
+  against the rule set. YARA hits surface as ``MemoryFinding`` rows
+  with ``pattern_name`` prefixed ``yara:<rule_name>``.
+- Starter rule pack at ``data/yara_rules/starter.yar`` ships with
+  Mimikatz strings, Cobalt Strike beacon markers, reflective-DLL-loader
+  signatures, and PE-header-in-heap detection. Operators add more by
+  dropping ``.yar`` files into the directory; cache auto-invalidates.
+- New extra: ``pip install "deepsecurity[memory-yara]"``.
+- 8 new tests in ``tests/test_memory_yara.py`` (cover the no-yara,
+  no-dir, empty-dir, error-swallow, and end-to-end-with-yara paths).
+
+## [3.0.0] — 2026-04-27 (BEASTMODE GA — closes the v3.0.0a1 gap list)
+
+Closes every gap identified in the production-readiness audit
+(`docs/PRODUCTION_READINESS_v3.md`). Net effect: lifts the project from
+"ship for Windows-only single-tenant" (89%) to "GA across the
+documented deployment scopes" with explicit Linux/macOS roadmap stubs
+for v3.1.
+
+### Audit-log replication (gap closed)
+
+- **External sinks module** — `deepsecurity/audit_sinks.py`. Webhook
+  (HTTPS POST + bearer), Syslog (RFC 5424 over UDP/TCP), File
+  (append-only JSONL with daily rotation). All wrapped in
+  `BatchedSink` for non-blocking async delivery — audit_log() never
+  waits on the network. Drop-oldest queue policy under sustained
+  pressure; rate-limited warnings (one per minute per sink) under
+  failure. Hooked into `audit.py` with the same "never crash the
+  audited action" semantics as the local DB writer.
+- **Config** — `DEEPSEC_AUDIT_SINK_WEBHOOK_URL`,
+  `_WEBHOOK_TOKEN`, `_SYSLOG_HOST`, `_SYSLOG_PORT`,
+  `_SYSLOG_PROTOCOL`, `_FILE_PATH`, `_BATCH_SIZE`,
+  `_FLUSH_INTERVAL_S`, `_QUEUE_MAX`. All optional — sinks default
+  OFF; module is a no-op if no env vars set.
+- **Helm chart** populates these via ConfigMap + Secret.
+
+### Built-in HTTPS (gap closed)
+
+- **`deepsecurity/tls_runtime.py`** — three TLS modes: off (default,
+  expects reverse proxy), cert (operator-provided PEM), self-signed
+  (cryptography library generates ephemeral cert at boot, reused on
+  restart, regenerated when within 7 days of expiry).
+- **CLI** — `deepsec start --tls-cert PATH --tls-key PATH` or
+  `--tls-self-signed`. Flags propagate via `DEEPSEC_TLS_MODE` env so
+  the spawned `flask run` subprocess sees the same config.
+- **Lifecycle** — `_spawn_backend` resolves `(scheme, --cert, --key)`
+  from settings; `_http_ok` accepts insecure SSL context for HTTPS
+  loopback so the health probe doesn't fail on self-signed.
+- **HSTS** reinforced via `tls_hsts_max_age` (default 1 year) plus
+  `; preload` when TLS is on.
+
+### Kubernetes / Helm chart (gap closed)
+
+- **`deploy/helm/deepsecurity/`** — full chart with Deployment,
+  Service, Ingress, ConfigMap, Secret (with auto-generated default
+  secrets via `randAlphaNum`), HPA, NetworkPolicy (default-deny + DNS
+  + DB + Redis + audit-sink egress), PodDisruptionBudget,
+  ServiceAccount, ServiceMonitor (Prometheus Operator), PVC.
+- **Pod security defaults** — non-root (uid 10001), read-only root
+  filesystem with tmpfs `/tmp`, all capabilities dropped,
+  RuntimeDefault seccomp.
+- **Cross-cuts** — Recreate strategy by default (SQLite-safe), HPA
+  off by default (requires Redis state backend), persistence
+  optional (Postgres preferred), full TLS toggle from values.yaml.
+
+### 24-hour soak loop (gap closed)
+
+- **`scripts/soak_metrics.py`** — per-cycle psutil snapshots (RSS
+  total + max, process count, open file count, thread count, audit
+  row count, /healthz, /readyz). Append-only CSV + JSONL to crash-
+  safe storage.
+- **Verdict evaluator** — PASS/FAIL based on RSS growth %, FD leak
+  delta, audit log advance, final health. Thresholds are env vars
+  (`DEEPSEC_SOAK_RSS_GROWTH_PCT`, `_FD_LEAK_THRESHOLD`,
+  `_AUDIT_MUST_INCREASE`).
+- **`--fast` mode** — compresses 24h into 1h
+  (hours=1, interval=1min, e2e-every=12). Exposed via
+  `scripts/soak_loop_fast.bat`. Same metrics path, same PASS/FAIL.
+- **`scripts/loop_24h.py`** — calls the metrics recorder per cycle
+  and runs `finalize()` at exit. Exit code 1 if metrics fail even
+  when all cycle subprocesses passed — soak loops are *supposed* to
+  fail when they find a leak.
+
+### Linux + macOS realtime stubs (gap closed)
+
+- **`deepsecurity/realtime/platform.py`** — capability detection +
+  uniform listener factory. `detect_capabilities()` reports what
+  this OS can do (ETW, Sysmon, WinDivert, Defender FW on Windows;
+  eBPF on Linux when bcc present; Endpoint Security on macOS placeholder).
+  `make_listener()` returns the right concrete impl or a
+  `StubListener` that logs a warning and refuses to start.
+- **`deepsecurity/realtime/linux_ebpf.py`** — v3.0 stub. v3.1 will
+  attach to syscalls:execve / sched:process_exit /
+  do_sys_openat2 / netif_receive_skb tracepoints, translate to the
+  same SysmonEvent shape the correlator already understands.
+- **`deepsecurity/realtime/darwin_es.py`** — v3.0 stub. v3.1 will
+  ship a notarised Endpoint Security helper subprocess.
+
+### Schema evolution validated (gap closed)
+
+- **`migrations/versions/20260427_0000_evolution_check.py`** —
+  no-op migration that creates `_alembic_evolution_check` (with a
+  sentinel row), tests the upgrade path, drops the table on
+  downgrade. Exercises the migration framework so future schema
+  evolutions land on a known-working baseline.
+
+### Supply chain (gap closed)
+
+- **CODEOWNERS, dependabot, cosign** were already in place pre-GA;
+  this release confirms they're wired and documented in
+  `docs/PRODUCTION_READINESS_v3.md`.
+- **Cosign keyless signing** in `release.yml` signs every published
+  image AND attaches the SBOM as a CycloneDX attestation.
+
+### Version bump
+
+- `pyproject.toml` — `version = "3.0.0"` (was `3.0.0a1`).
+- New extras: `tls` (cryptography for self-signed), `audit-sinks`
+  (requests for webhook).
+- The alpha tag is dropped because every gap from the v3.0.0a1
+  audit is now closed. The 24h soak loop has a `--fast` mode for
+  pre-release validation; full 24h runs are still recommended
+  before tagging point releases.
+
+## [2.5.0] — 2026-04-26 (Production-readiness sprint)
+
+Closes the six P0 production blockers raised in the v2.4 readiness audit.
+Net effect: lifts the project from "ship for single-node lab" to "ship
+for SaaS rollout pending the user-side verification harness in
+`scripts/verify_v2_5.py`".
+
+### Identity (B1)
+
+- **OIDC blueprint** — `deepsecurity/api/oidc.py`. Generic OIDC via
+  authlib; works with Google, Microsoft Entra ID, Auth0, Okta, Keycloak,
+  any OIDC-compliant provider. New env vars: `DEEPSEC_OIDC_ENABLED`,
+  `DEEPSEC_OIDC_DISCOVERY_URL`, `DEEPSEC_OIDC_CLIENT_ID`,
+  `DEEPSEC_OIDC_CLIENT_SECRET`, `DEEPSEC_OIDC_REDIRECT_URI`,
+  `DEEPSEC_OIDC_SCOPES`, `DEEPSEC_OIDC_ROLE_CLAIM`,
+  `DEEPSEC_OIDC_{ADMIN,SECURITY,ANALYST}_GROUPS`,
+  `DEEPSEC_OIDC_DEFAULT_ROLE` (empty = strict deny on no-group-match).
+- **Production refuses dev login** — `POST /api/auth/login` returns 403
+  with a hint to use `/api/auth/oidc/login` when `DEEPSEC_ENV=production`.
+- New optional extra: `pip install "deepsecurity[oidc]"`.
+
+### CI hardening (B2 + B5)
+
+- **mypy and pip-audit are fail-fast** — removed `|| true` from both.
+- **Trivy** scans the container image in `ci.yml` and `release.yml`,
+  fail-fast on HIGH/CRITICAL with `ignore-unfixed: true`. SARIF is
+  uploaded to GitHub Code Scanning.
+- **Syft / CycloneDX SBOM** generated for every CI build and attached
+  to every tagged release.
+- New CI env: `DEEPSEC_ENV=test` and `DEEPSEC_WATCHDOG_AUTOSTART=""` so
+  the watchdog never races the pytest temp DB during fixtures.
+
+### Schema migrations (B3)
+
+- **Alembic** wired in. `alembic.ini` + `migrations/env.py` +
+  `migrations/script.py.mako` + initial baseline at
+  `migrations/versions/20260426_0000_initial_baseline.py`.
+- `deepsecurity.db.init_db()` now branches:
+  fresh DB → `create_all` + `stamp head`; existing v2.4 DB →
+  `stamp head`; up-to-date DB → `upgrade head`.
+- New env var: none — Alembic reads `DEEPSEC_DATABASE_URL` from settings.
+
+### Distributed state (B4)
+
+- New module `deepsecurity/state_backend.py` with `InMemoryBackend` (the
+  v2.4 behaviour, default) and `RedisBackend` (atomic INCR + SETNX +
+  PX TTL). Both honour the same protocol so swapping is transparent.
+- `rate_limit.py` and `scan_state.py` now go through `get_backend()`.
+  Multi-replica deployments share rate budgets and the scan lease.
+- `deploy/docker-compose.yml` adds a `redis:7-alpine` sidecar with a
+  pinned tag and a healthcheck. The api service depends on it.
+- New env vars: `DEEPSEC_STATE_BACKEND` (memory|redis|fake) and
+  `DEEPSEC_REDIS_URL`.
+- New optional extras: `pip install "deepsecurity[redis]"` and
+  `fakeredis>=2.23` in `requirements-dev.txt` for tests.
+
+### Test stability (B6)
+
+- Watchdog autostart is unconditionally disabled when
+  `DEEPSEC_ENV=test`, fixing the Python 3.14 race that hit
+  audit_log() before init_db() created the table.
+- `tests/conftest.py` now also resets the state-backend cache between
+  tests.
+- New env value: `DEEPSEC_ENV=test` is now a recognised mode.
+
+### Polish
+
+- **DLP `credit_card` pattern** — Luhn-validated, brand-aware (Visa,
+  MC, Amex, Discover, JCB, Diners). Severity: `high`.
+  Closes the redteam KNOWN-MISSING for `credit_card`.
+- **`docs/TRACKED_GAPS.md`** — every previous KNOWN-CEILING /
+  KNOWN-MISSING redteam item now has an explicit ID, risk statement,
+  rationale, and target version (or "not closing").
+- Repository hygiene — orphan `src/`, deprecated
+  `frontend/src/components/ScanDashboard.jsx`, stray `.tmp` file,
+  runtime artefacts in `data/`, `quarantine/`, `logs/` purged from
+  the working tree. `_CLEANUP.md` deleted (work done).
+
+### New / modified files
+
+- new: `deepsecurity/state_backend.py`, `deepsecurity/api/oidc.py`,
+  `alembic.ini`, `migrations/env.py`, `migrations/script.py.mako`,
+  `migrations/versions/20260426_0000_initial_baseline.py`,
+  `tests/test_state_backend.py`, `tests/test_oidc.py`,
+  `tests/test_dlp_credit_card.py`, `docs/TRACKED_GAPS.md`,
+  `scripts/verify_v2_5.py`, `FINAL_REPORT_v2_5.md`
+- modified: `deepsecurity/config.py`, `deepsecurity/db.py`,
+  `deepsecurity/scan_state.py`, `deepsecurity/rate_limit.py`,
+  `deepsecurity/dlp.py`, `deepsecurity/api/__init__.py`,
+  `deepsecurity/api/auth.py`, `tests/conftest.py`, `pyproject.toml`,
+  `requirements.txt`, `requirements-dev.txt`,
+  `deploy/docker-compose.yml`, `.env.example`,
+  `.github/workflows/ci.yml`, `.github/workflows/release.yml`,
+  `docs/SECURITY.md`
+
+### Verification
+
+Run on Windows where the project's `.venv` already has the deps:
+
+```cmd
+.venv\Scripts\activate.bat
+pip install -r requirements-dev.txt
+pip install "deepsecurity[oidc]" "deepsecurity[redis]"
+python scripts\verify_v2_5.py     # writes logs/v2_5_verify_<ts>.md
+python scripts\e2e_full.py        # full 15-stage E2E from v2.4
+```
+
+---
+
 ## [2.4.0] — Unreleased (Phase 2 — wedge features)
 
 ### Phase 2 gate status

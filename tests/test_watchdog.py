@@ -12,13 +12,13 @@ just the parts of the controller that are our own code. ``pytest -k
 watchdog`` should pass regardless of whether the optional dep is
 installed.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
-
 
 # ---------------------------------------------------------------------------
 # Scope resolution — user_risk and system presets.
@@ -94,9 +94,7 @@ def test_exclusion_glob_matches_node_modules(temp_env: Path) -> None:
     from deepsecurity.watchdog_monitor import _matches_any_glob
 
     globs = ["**/node_modules/**", "**/*.pyc"]
-    assert _matches_any_glob(
-        Path("C:/app/frontend/node_modules/react/index.js"), globs
-    )
+    assert _matches_any_glob(Path("C:/app/frontend/node_modules/react/index.js"), globs)
     assert _matches_any_glob(Path("/home/me/proj/node_modules/x.js"), globs)
     assert _matches_any_glob(Path("C:/some/foo.pyc"), globs)
     assert not _matches_any_glob(Path("C:/Users/me/Downloads/installer.exe"), globs)
@@ -192,18 +190,19 @@ def test_maybe_autostart_skips_if_already_running(temp_env: Path, monkeypatch) -
 
     # Simulate "already running": patch out .start to record a call and
     # patch .running to return True.
-    with patch.object(
-        type(controller), "running", new_callable=lambda: property(lambda _self: True)
-    ), patch.object(controller, "start") as mock_start:
+    with (
+        patch.object(
+            type(controller), "running", new_callable=lambda: property(lambda _self: True)
+        ),
+        patch.object(controller, "start") as mock_start,
+    ):
         from deepsecurity.api import _maybe_autostart_watchdog
 
         _maybe_autostart_watchdog()
         mock_start.assert_not_called()
 
 
-def test_maybe_autostart_logs_and_swallows_controller_crashes(
-    temp_env: Path, monkeypatch
-) -> None:
+def test_maybe_autostart_logs_and_swallows_controller_crashes(temp_env: Path, monkeypatch) -> None:
     """If the controller raises, the server must still boot. The whole
     point of the try/except around _maybe_autostart_watchdog is 'never
     block the api.ready log line'."""
@@ -275,7 +274,6 @@ def test_self_dirs_includes_data_logs_quarantine(temp_env: Path) -> None:
     from deepsecurity.watchdog_monitor import _deepsec_self_dirs
 
     dirs = _deepsec_self_dirs()
-    names = {d.name for d in dirs}
     # Not every dir exists on every system; we just need the IDEA to be
     # in the set so the _in_ignore check will trip when those paths
     # appear under a watched root.
@@ -346,9 +344,7 @@ def test_controller_without_package_gives_clean_error() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_entropy_spike_assigns_nonzero_confidence(
-    temp_env: Path, scan_root: Path
-) -> None:
+def test_entropy_spike_assigns_nonzero_confidence(temp_env: Path, scan_root: Path) -> None:
     """An entropy-spike detection must have confidence > 0 so SIEMs and
     dashboards can rank-order results. The old code left it at 0.0."""
     import os

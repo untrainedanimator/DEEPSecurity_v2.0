@@ -1,4 +1,5 @@
 """Threat-intel feed writer round-trip (offline-friendly)."""
+
 from __future__ import annotations
 
 from pathlib import Path

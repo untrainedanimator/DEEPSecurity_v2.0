@@ -59,6 +59,7 @@ Exit codes (with --once):
     2  interrupted
     3  a dependency is missing (e.g. pytest not installed)
 """
+
 from __future__ import annotations
 
 import argparse
@@ -69,9 +70,8 @@ import subprocess
 import sys
 import time
 from dataclasses import asdict, dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 LOG_DIR = REPO_ROOT / "logs"
@@ -104,7 +104,7 @@ class C:
 
 
 def _iso_now() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+    return datetime.now(UTC).isoformat(timespec="seconds")
 
 
 # ---------------------------------------------------------------------------
@@ -178,12 +178,9 @@ class ServerHandle:
 
     # -- context manager -----------------------------------------------------
 
-    def __enter__(self) -> "ServerHandle":
+    def __enter__(self) -> ServerHandle:
         if self.is_up():
-            print(
-                f"  {C.dim}server already running at {self.url} — reusing it"
-                f"{C.reset}"
-            )
+            print(f"  {C.dim}server already running at {self.url} — reusing it{C.reset}")
             return self
 
         if not self.autostart:
@@ -202,10 +199,7 @@ class ServerHandle:
             except Exception:
                 pass
             self._stop()
-            raise RuntimeError(
-                f"Flask server did not come up within 30s. "
-                f"Last server log:\n{out}"
-            )
+            raise RuntimeError(f"Flask server did not come up within 30s. Last server log:\n{out}")
         print(
             f"  {C.green}server up{C.reset}  {self.url}  "
             f"{C.dim}(pid={self._proc.pid}, log={SERVER_LOG}){C.reset}"
@@ -244,13 +238,8 @@ class ServerHandle:
         env.setdefault("DEEPSEC_PORT", str(self.port))
 
         self._log_handle = SERVER_LOG.open("a", encoding="utf-8", buffering=1)
-        self._log_handle.write(
-            f"\n=== server start  {_iso_now()}  {self.url} ===\n"
-        )
-        print(
-            f"  {C.dim}starting Flask server on {self.url} … "
-            f"(log → {SERVER_LOG}){C.reset}"
-        )
+        self._log_handle.write(f"\n=== server start  {_iso_now()}  {self.url} ===\n")
+        print(f"  {C.dim}starting Flask server on {self.url} … (log → {SERVER_LOG}){C.reset}")
 
         # Platform-specific: on Windows, group the child in a new process
         # group so we can terminate the whole tree cleanly.
@@ -302,9 +291,7 @@ class ServerHandle:
                 self._log_handle = None
             return
 
-        print(
-            f"  {C.dim}stopping server (pid={self._proc.pid}) …{C.reset}"
-        )
+        print(f"  {C.dim}stopping server (pid={self._proc.pid}) …{C.reset}")
         try:
             if os.name == "nt":
                 # Send Ctrl+Break to the new process group.
@@ -328,9 +315,7 @@ class ServerHandle:
             self._proc = None
             if self._log_handle is not None:
                 try:
-                    self._log_handle.write(
-                        f"=== server stop  {_iso_now()} ===\n"
-                    )
+                    self._log_handle.write(f"=== server stop  {_iso_now()} ===\n")
                     self._log_handle.close()
                 except Exception:
                     pass
@@ -351,7 +336,7 @@ def _run_phase(name: str, cmd: list[str], timeout: int = 300) -> PhaseResult:
             cwd=REPO_ROOT,
             capture_output=True,
             text=True,
-            encoding="utf-8",        # ← force UTF-8 so unicode in children survives
+            encoding="utf-8",  # ← force UTF-8 so unicode in children survives
             errors="replace",
             timeout=timeout,
             check=False,
@@ -417,7 +402,7 @@ def phase_smoke(url: str, password: str | None) -> PhaseResult:
 
 
 def one_pass(*, url: str, password: str | None, include_smoke: bool) -> RunSummary:
-    started = datetime.now(timezone.utc)
+    started = datetime.now(UTC)
     t0 = time.monotonic()
     phases: list[PhaseResult] = []
 
@@ -448,7 +433,7 @@ def one_pass(*, url: str, password: str | None, include_smoke: bool) -> RunSumma
             )
         )
 
-    finished = datetime.now(timezone.utc)
+    finished = datetime.now(UTC)
     summary = RunSummary(
         started_at=started.isoformat(timespec="seconds"),
         finished_at=finished.isoformat(timespec="seconds"),
@@ -588,7 +573,7 @@ def loop(
     print(f"{C.bold}continuous_tests{C.reset}  target={url}  interval={interval}s")
     print(f"  log:       {LOG_FILE}")
     print(f"  last-run:  {LAST_RUN_FILE}")
-    print(f"  Ctrl+C to stop\n")
+    print("  Ctrl+C to stop\n")
 
     while not _SHUTDOWN:
         total_runs += 1
@@ -621,10 +606,7 @@ def loop(
             time.sleep(min(1.0, remain))
             remain -= 1.0
 
-    print(
-        f"\n{C.bold}stopped{C.reset}  "
-        f"total_runs={total_runs}  total_failures={total_failures}"
-    )
+    print(f"\n{C.bold}stopped{C.reset}  total_runs={total_runs}  total_failures={total_failures}")
     return 0
 
 
@@ -665,10 +647,7 @@ def watch_mode(*, url: str, password: str | None, include_smoke: bool) -> int:
             if now - self._last < 2.0:
                 return
             self._last = now
-            print(
-                f"{C.cyan}source changed: {Path(p).relative_to(REPO_ROOT)}"
-                f" — rerunning{C.reset}"
-            )
+            print(f"{C.cyan}source changed: {Path(p).relative_to(REPO_ROOT)} — rerunning{C.reset}")
             s = one_pass(url=url, password=password, include_smoke=include_smoke)
             for ph in s.phases:
                 _print_phase(ph)
@@ -683,10 +662,9 @@ def watch_mode(*, url: str, password: str | None, include_smoke: bool) -> int:
     obs.schedule(handler, str(REPO_ROOT / "tests"), recursive=True)
     obs.start()
     print(
-        f"{C.bold}continuous_tests (watch){C.reset}  target={url}  "
-        f"watching: deepsecurity/ tests/"
+        f"{C.bold}continuous_tests (watch){C.reset}  target={url}  watching: deepsecurity/ tests/"
     )
-    print(f"  Ctrl+C to stop\n")
+    print("  Ctrl+C to stop\n")
 
     # Initial pass.
     s = one_pass(url=url, password=password, include_smoke=include_smoke)

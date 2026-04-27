@@ -9,12 +9,12 @@ Also guards the new ``observe`` severity tier: findings with severity
 ``observe`` are persisted and returned through the API, but MUST NOT
 trigger the high/critical alert-bus dispatch path.
 """
+
 from __future__ import annotations
 
 import pytest
 
 from deepsecurity.dlp import PATTERNS, scan_text
-
 
 # ---------------------------------------------------------------------------
 # Registry sanity — the 15 new patterns must be in PATTERNS.
@@ -101,10 +101,7 @@ def _synthetic_slack_webhook() -> str:
     # Split across pieces so the full URL never appears as a literal.
     host = "hooks" + "." + "slack" + "." + "com"
     return (
-        f"https://{host}/services/"
-        + "T01ABCDEFGH"
-        + "/B02IJKLMNOP/"
-        + "abcdefghij" + "1234567890"
+        f"https://{host}/services/" + "T01ABCDEFGH" + "/B02IJKLMNOP/" + "abcdefghij" + "1234567890"
     )
 
 
@@ -126,25 +123,25 @@ _POSITIVE: list[tuple[str, str]] = [
     ("anthropic_key", "ANTHROPIC=sk-ant-api03-AbC12_DefGHIjklMN34-pQRstUv56WxYz"),
     ("stripe_webhook_secret", "STRIPE_WHSEC=whsec_AbC123DEfgh456IjKLmn7890"),
     ("twilio_account_sid", f"TWILIO_SID={_synthetic_twilio_sid()}"),
-    ("azure_connection_string", (
-        "DefaultEndpointsProtocol=https;AccountName=acct;"
-        "AccountKey=fakeKeyForTestingPurposesOnly;"
-        "EndpointSuffix=core.windows.net"
-    )),
+    (
+        "azure_connection_string",
+        (
+            "DefaultEndpointsProtocol=https;AccountName=acct;"
+            "AccountKey=fakeKeyForTestingPurposesOnly;"
+            "EndpointSuffix=core.windows.net"
+        ),
+    ),
     ("slack_webhook_full_url", f"Slack: {_synthetic_slack_webhook()}"),
     ("discord_bot_token", f"DISCORD_BOT={_synthetic_discord_bot_token()}"),
-    ("jwt_bearer_header",
-     "Authorization: Bearer eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.abc123"),
+    ("jwt_bearer_header", "Authorization: Bearer eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.abc123"),
     # UK NINO — "AB 12 34 56 C" is the canonical exemplar.
     ("uk_nino", "NINO: AB 12 34 56 C"),
     ("india_aadhaar", "Aadhaar: 2345 6789 0123"),
     ("eu_vat", "Supplier VAT: DE123456789"),
     ("canada_sin", "SIN 123-456-782"),
     ("icd10_code", "Diagnosis: J44.9 (Chronic obstructive pulmonary disease)"),
-    ("source_code_secret_comment",
-     "# TODO: rotate this secret before we ship"),
-    ("ssh_public_key",
-     "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDabcdefghijklmnopqrstuvwx user@host"),
+    ("source_code_secret_comment", "# TODO: rotate this secret before we ship"),
+    ("ssh_public_key", "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDabcdefghijklmnopqrstuvwx user@host"),
 ]
 
 
@@ -178,8 +175,7 @@ _NEGATIVE: list[tuple[str, str]] = [
     # discord_bot_token: a UUID is not a discord token shape.
     ("discord_bot_token", "uuid: 123e4567-e89b-12d3-a456-426614174000"),
     # jwt_bearer_header: a raw JWT without the Authorization prefix.
-    ("jwt_bearer_header",
-     "token: eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.abc123  # no auth header"),
+    ("jwt_bearer_header", "token: eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.abc123  # no auth header"),
     # uk_nino: forbidden-prefix "BG 12 34 56 C"
     ("uk_nino", "not a NINO: BG 12 34 56 C"),
     # india_aadhaar: starts with 0 or 1 → invalid Aadhaar prefix.
@@ -198,14 +194,11 @@ _NEGATIVE: list[tuple[str, str]] = [
 
 
 @pytest.mark.parametrize("pattern_name,text", _NEGATIVE)
-def test_pattern_does_not_match_negative_fixture(
-    pattern_name: str, text: str
-) -> None:
+def test_pattern_does_not_match_negative_fixture(pattern_name: str, text: str) -> None:
     hits = scan_text(text + "\n", f"/fixture/{pattern_name}_neg.txt")
     names = [h.pattern_name for h in hits]
     assert pattern_name not in names, (
-        f"pattern '{pattern_name}' falsely matched: {text!r}; "
-        f"all hit names: {names}"
+        f"pattern '{pattern_name}' falsely matched: {text!r}; all hit names: {names}"
     )
 
 

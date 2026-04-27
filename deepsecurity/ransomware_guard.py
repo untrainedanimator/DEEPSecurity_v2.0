@@ -19,6 +19,7 @@ Honest caveats:
 So: this is a HEURISTIC. It sits at ~3/5 on evasion resistance but catches
 the noisy 80% of ransomware crypters.
 """
+
 from __future__ import annotations
 
 import threading
@@ -48,17 +49,13 @@ class RansomwareGuard:
         window_seconds: float | None = None,
         auto_kill: bool | None = None,
     ) -> None:
-        self._threshold = (
-            threshold if threshold is not None else settings.ransomware_rate_threshold
-        )
+        self._threshold = threshold if threshold is not None else settings.ransomware_rate_threshold
         self._window = (
             window_seconds
             if window_seconds is not None
             else settings.ransomware_rate_window_seconds
         )
-        self._auto_kill = (
-            auto_kill if auto_kill is not None else settings.ransomware_auto_kill
-        )
+        self._auto_kill = auto_kill if auto_kill is not None else settings.ransomware_auto_kill
         self._events: deque[float] = deque()
         self._lock = threading.Lock()
         # Rate-limit the alerts we fire so a single event storm doesn't

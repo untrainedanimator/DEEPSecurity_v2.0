@@ -10,6 +10,7 @@ Integration-style where possible: stand up a real Flask test client,
 enrol + register an agent, push a policy, verify round-trip. No real
 network / no real watchdog spawned.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -19,7 +20,6 @@ from unittest.mock import MagicMock
 
 import pytest
 from flask.testing import FlaskClient
-
 
 # ---------------------------------------------------------------------------
 # Helpers: enrol + register an agent via the real API so we have real creds.
@@ -98,7 +98,7 @@ def test_policy_is_empty_before_any_push(initialized_db: Path, authed_client) ->
 
 def test_set_policy_with_full_body(initialized_db: Path, authed_client) -> None:
     c, tok = authed_client
-    agent_id, api_key = _enrol_and_register(c, tok)
+    agent_id, _api_key = _enrol_and_register(c, tok)
 
     policy = {
         "exclusion_globs": "**/node_modules/**;**/.venv/**",
@@ -140,9 +140,7 @@ def test_set_policy_rejects_unknown_keys(initialized_db: Path, authed_client) ->
     assert "exclude_globs" in body["unknown"]
 
 
-def test_set_policy_validates_autostart_scope(
-    initialized_db: Path, authed_client
-) -> None:
+def test_set_policy_validates_autostart_scope(initialized_db: Path, authed_client) -> None:
     c, tok = authed_client
     agent_id, _ = _enrol_and_register(c, tok)
 
@@ -155,9 +153,7 @@ def test_set_policy_validates_autostart_scope(
     assert r.get_json()["error"] == "bad_value"
 
 
-def test_set_policy_404_on_unknown_agent(
-    initialized_db: Path, authed_client
-) -> None:
+def test_set_policy_404_on_unknown_agent(initialized_db: Path, authed_client) -> None:
     c, tok = authed_client
     r = c.post(
         "/api/agents/unknown-agent-id/policy",
@@ -167,9 +163,7 @@ def test_set_policy_404_on_unknown_agent(
     assert r.status_code == 404
 
 
-def test_heartbeat_surfaces_current_policy_sha(
-    initialized_db: Path, authed_client
-) -> None:
+def test_heartbeat_surfaces_current_policy_sha(initialized_db: Path, authed_client) -> None:
     c, tok = authed_client
     agent_id, api_key = _enrol_and_register(c, tok)
 
@@ -192,9 +186,7 @@ def test_agent_can_fetch_own_policy(initialized_db: Path, authed_client) -> None
     agent_id, api_key = _enrol_and_register(c, tok)
 
     policy = {"exclusion_globs": "**/foo/**", "autostart_scope": ""}
-    c.post(
-        f"/api/agents/{agent_id}/policy", json=policy, headers=_auth(tok)
-    )
+    c.post(f"/api/agents/{agent_id}/policy", json=policy, headers=_auth(tok))
 
     r = c.get(
         f"/api/agents/{agent_id}/policy",
@@ -206,13 +198,11 @@ def test_agent_can_fetch_own_policy(initialized_db: Path, authed_client) -> None
     assert len(body["policy_sha"]) == 64
 
 
-def test_agent_cannot_fetch_another_agents_policy(
-    initialized_db: Path, authed_client
-) -> None:
+def test_agent_cannot_fetch_another_agents_policy(initialized_db: Path, authed_client) -> None:
     c, tok = authed_client
     # Register two agents; one tries to read the other's policy.
     a1_id, a1_key = _enrol_and_register(c, tok)
-    a2_id, a2_key = _enrol_and_register(c, tok)
+    a2_id, _a2_key = _enrol_and_register(c, tok)
 
     c.post(
         f"/api/agents/{a2_id}/policy",
@@ -228,9 +218,7 @@ def test_agent_cannot_fetch_another_agents_policy(
     assert r.get_json()["error"] == "agent_id_mismatch"
 
 
-def test_policy_round_trip_survives_update(
-    initialized_db: Path, authed_client
-) -> None:
+def test_policy_round_trip_survives_update(initialized_db: Path, authed_client) -> None:
     c, tok = authed_client
     agent_id, api_key = _enrol_and_register(c, tok)
 

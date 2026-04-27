@@ -3,6 +3,7 @@
 Restore and delete are privileged: admin or security role only.
 Every action writes to the audit log with actor + file + reason.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -11,7 +12,7 @@ from typing import Any
 from flask import Blueprint, jsonify, request
 from flask_jwt_extended import get_jwt
 
-from deepsecurity.api.auth import require_role
+from deepsecurity.api.auth import require_role, require_stepup
 from deepsecurity.audit import audit_log
 from deepsecurity.config import settings
 from deepsecurity.db import session_scope
@@ -46,6 +47,7 @@ def list_quarantined() -> Any:
 
 @quarantine_bp.route("/restore", methods=["POST"])
 @require_role("admin", "security")
+@require_stepup()
 def restore() -> Any:
     data = request.get_json(silent=True) or {}
     qname = str(data.get("name", ""))
@@ -74,6 +76,7 @@ def restore() -> Any:
 
 @quarantine_bp.route("/delete", methods=["POST"])
 @require_role("admin")
+@require_stepup()
 def delete_quarantined() -> Any:
     """Permanently delete a quarantined copy. Admin-only."""
     data = request.get_json(silent=True) or {}
@@ -173,8 +176,13 @@ def restore_session() -> Any:
         },
     )
     return jsonify(
-        {"session_id": session_id, "restored": restored, "missing": missing,
-         "failed": failed, "items": details}
+        {
+            "session_id": session_id,
+            "restored": restored,
+            "missing": missing,
+            "failed": failed,
+            "items": details,
+        }
     )
 
 
@@ -201,5 +209,7 @@ def add_to_safelist() -> Any:
                 actor=actor,
             )
         )
-    audit_log(actor=actor, action="quarantine.safelist", file_path=file_path, details={"sha256": sha})
+    audit_log(
+        actor=actor, action="quarantine.safelist", file_path=file_path, details={"sha256": sha}
+    )
     return jsonify({"added": True}), 201

@@ -13,9 +13,10 @@ For DEEPSecurity, the monitoring evidence is:
     - Integrity check status (tamper-awareness of our own binaries)
     - Ransomware rate detector state
 """
+
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import func
@@ -24,7 +25,6 @@ from sqlalchemy.orm import Session
 from deepsecurity.compliance import DateWindow
 from deepsecurity.config import settings
 from deepsecurity.models import AuditLog, DLPFinding, ScanResult, ScanSession
-
 
 TEMPLATE_ID = "soc2-cc7-1"
 TITLE = "SOC2 CC7.1 — Threat detection and monitoring"
@@ -95,19 +95,15 @@ def build(session: Session, window: DateWindow) -> dict[str, Any]:
         .filter(AuditLog.timestamp <= window.end)
         .all()
     )
-    ransomware_alerts = [
-        a for a in audit if a.action == "ransomware.suspected"
-    ]
-    integrity_alerts = [
-        a for a in audit if a.action.startswith("integrity.")
-    ]
+    ransomware_alerts = [a for a in audit if a.action == "ransomware.suspected"]
+    integrity_alerts = [a for a in audit if a.action.startswith("integrity.")]
 
     return {
         "template_id": TEMPLATE_ID,
         "title": TITLE,
         "control_ref": CONTROL_REF,
         "description": DESCRIPTION,
-        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "generated_at": datetime.now(UTC).isoformat(),
         "window": {
             "start": window.start.isoformat(),
             "end": window.end.isoformat(),

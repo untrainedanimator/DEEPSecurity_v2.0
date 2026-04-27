@@ -1,0 +1,22 @@
+# Global default owner — every PR needs this person's review
+*       @dino
+
+# Security-sensitive surfaces — require security reviewer
+/deepsecurity/auth*           @dino @security-reviewer
+/deepsecurity/api/oidc.py     @dino @security-reviewer
+/deepsecurity/audit.py        @dino @security-reviewer
+/deepsecurity/audit_sinks.py  @dino @security-reviewer
+/deepsecurity/realtime/       @dino @security-reviewer
+/deepsecurity/firewall/       @dino @security-reviewer
+/deepsecurity/dns_sinkhole/   @dino @security-reviewer
+/deepsecurity/protection/     @dino @security-reviewer
+/deepsecurity/tls_proxy/      @dino @security-reviewer
+
+# CI/CD and supply chain — require ops + security
+/.github/workflows/   @dino @security-reviewer
+/Dockerfile           @dino @security-reviewer
+/pyproject.toml       @dino @security-reviewer
+
+# Migrations — require DBA + dev
+/alembic/             @dino @dba-reviewer
+/migrations/          @dino @dba-reviewer

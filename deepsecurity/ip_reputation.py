@@ -10,6 +10,7 @@ Honest caveats:
   - Private-range IPs (10.x, 192.168.x, 127.x) are ignored — they can't
     be attacker C2 and false hits on them are just noise.
 """
+
 from __future__ import annotations
 
 import ipaddress
@@ -79,7 +80,7 @@ class IPReputation:
         """Pull the latest list and atomically replace the cache. Returns
         per-refresh stats. Never raises."""
         try:
-            with urllib.request.urlopen(url, timeout=timeout) as resp:  # noqa: S310
+            with urllib.request.urlopen(url, timeout=timeout) as resp:
                 raw = resp.read().decode("utf-8", errors="replace")
         except (urllib.error.URLError, TimeoutError) as exc:
             return {"refreshed": False, "error": str(exc)}
@@ -100,9 +101,7 @@ class IPReputation:
             tmp = self._path.with_suffix(self._path.suffix + ".tmp")
             tmp.write_text(
                 "# DEEPSecurity IP reputation cache\n"
-                "# source: abuse.ch Feodo Tracker\n"
-                + "\n".join(sorted(ips))
-                + "\n",
+                "# source: abuse.ch Feodo Tracker\n" + "\n".join(sorted(ips)) + "\n",
                 encoding="utf-8",
             )
             tmp.replace(self._path)

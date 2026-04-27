@@ -4,6 +4,7 @@ Tiny zero-dependency exporter. We don't pull `prometheus_client` — everything
 we need is a handful of atomic counters and a single format helper. If you
 prefer the official client library, swap `render()` for `prometheus_client.generate_latest`.
 """
+
 from __future__ import annotations
 
 import threading
@@ -115,9 +116,7 @@ class Metrics:
             for b, c in zip(h.buckets, h.bucket_counts, strict=True):
                 cumulative += c
                 out.append(f'deepsec_scan_duration_seconds_bucket{{le="{b}"}} {cumulative}')
-            out.append(
-                f'deepsec_scan_duration_seconds_bucket{{le="+Inf"}} {h.total_count}'
-            )
+            out.append(f'deepsec_scan_duration_seconds_bucket{{le="+Inf"}} {h.total_count}')
             out.append(f"deepsec_scan_duration_seconds_sum {h.total_sum:.3f}")
             out.append(f"deepsec_scan_duration_seconds_count {h.total_count}")
 

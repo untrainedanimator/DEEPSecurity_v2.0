@@ -1,4 +1,5 @@
 """Prometheus text exposition."""
+
 from __future__ import annotations
 
 from flask import Blueprint, Response

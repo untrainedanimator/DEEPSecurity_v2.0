@@ -1,4 +1,5 @@
 """Running-process visibility + enforcement (user-space, not EDR)."""
+
 from __future__ import annotations
 
 from typing import Any
@@ -45,9 +46,7 @@ def scan() -> Any:
             "total": len(results),
             "known_bad": sum(1 for r in results if r["label"] == "known_bad"),
             "suspicious": sum(1 for r in results if r["label"] == "suspicious"),
-            "auto_killed": sum(
-                1 for r in results if r.get("auto_kill_result", {}).get("killed")
-            ),
+            "auto_killed": sum(1 for r in results if r.get("auto_kill_result", {}).get("killed")),
             "auto_kill_enabled": settings.auto_kill_known_bad,
             "processes": results,
         }

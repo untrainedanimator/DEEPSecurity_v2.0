@@ -9,16 +9,16 @@ For DEEPSecurity the endpoint evidence is:
     - Quarantine + safelist state (what was isolated, what's allow-listed)
     - Watchdog status (is the endpoint scanner itself running?)
 """
+
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from sqlalchemy.orm import Session
 
 from deepsecurity.compliance import DateWindow
 from deepsecurity.models import Agent, SafeListEntry
-
 
 TEMPLATE_ID = "iso27001-a-8-1"
 TITLE = "ISO 27001 A.8.1 — User endpoint devices"
@@ -33,24 +33,20 @@ DESCRIPTION = (
 
 def build(session: Session, window: DateWindow) -> dict[str, Any]:
     agents = session.query(Agent).all()
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     stale_threshold = now - timedelta(hours=2)
 
     # Normalise heartbeat comparison — SQLite stores naive datetimes.
     def _aware(dt: datetime | None) -> datetime | None:
         if dt is None:
             return None
-        return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+        return dt if dt.tzinfo else dt.replace(tzinfo=UTC)
 
     agent_rows = []
     alive_count = 0
     for a in agents:
         last_hb = _aware(a.last_heartbeat_at)
-        is_alive = (
-            last_hb is not None
-            and last_hb >= stale_threshold
-            and bool(a.enabled)
-        )
+        is_alive = last_hb is not None and last_hb >= stale_threshold and bool(a.enabled)
         if is_alive:
             alive_count += 1
         agent_rows.append(

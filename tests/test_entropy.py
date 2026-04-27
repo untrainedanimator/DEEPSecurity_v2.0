@@ -1,4 +1,5 @@
 """Entropy calculation + MIME-aware baseline + whitelist."""
+
 from __future__ import annotations
 
 import os

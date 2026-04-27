@@ -5,14 +5,16 @@ API key passed via the `X-DEEPSEC-AGENT-KEY` header (and the agent's UUID
 via `X-DEEPSEC-AGENT-ID`). Two separate auth paths so the same app can
 serve both an operator dashboard and a fleet of machines.
 """
+
 from __future__ import annotations
 
 import hashlib
 import hmac
 import secrets
-from datetime import datetime, timedelta, timezone
+from collections.abc import Callable
+from datetime import UTC, datetime, timedelta
 from functools import wraps
-from typing import Any, Callable
+from typing import Any
 
 from flask import g, jsonify, request
 
@@ -78,7 +80,7 @@ def issue_enrolment_token(
                 token_hash=hash_enrolment_token(token),
                 label=label,
                 issued_by=issued_by,
-                expires_at=datetime.now(timezone.utc) + timedelta(hours=ttl_hours),
+                expires_at=datetime.now(UTC) + timedelta(hours=ttl_hours),
             )
         )
     return token
@@ -107,11 +109,11 @@ def consume_enrolment_token(token: str) -> AgentEnrolmentToken | None:
         # with the tz-aware now() — otherwise Python raises TypeError.
         expires_at = row.expires_at
         if expires_at.tzinfo is None:
-            expires_at = expires_at.replace(tzinfo=timezone.utc)
-        if expires_at < datetime.now(timezone.utc):
+            expires_at = expires_at.replace(tzinfo=UTC)
+        if expires_at < datetime.now(UTC):
             _log.info("enrol.token_expired", token_id=row.id)
             return None
-        row.used_at = datetime.now(timezone.utc)
+        row.used_at = datetime.now(UTC)
         s.flush()
         # Detach from session so caller can read fields safely.
         s.expunge(row)
@@ -144,7 +146,7 @@ def require_agent(fn: Callable) -> Callable:
                 _log.warning("agent.auth_failed", agent_id=agent_id)
                 return jsonify({"error": "bad_agent_key"}), 401
             # Touch the heartbeat on every authenticated call.
-            agent.last_heartbeat_at = datetime.now(timezone.utc)
+            agent.last_heartbeat_at = datetime.now(UTC)
             s.flush()
             s.expunge(agent)
         g.agent = agent

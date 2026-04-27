@@ -4,6 +4,7 @@ Regression guard for v2.3 audit finding: cli.py was echoing
 settings.database_url verbatim into stdout, which on Postgres DSNs
 leaks the password into terminal history / log files / screenshots.
 """
+
 from __future__ import annotations
 
 import pytest

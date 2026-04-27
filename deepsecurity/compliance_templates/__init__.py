@@ -29,6 +29,7 @@ Design notes:
 - No new deps. Reuses ``deepsecurity.compliance`` helpers and the
   existing models.
 """
+
 from __future__ import annotations
 
 from types import ModuleType
@@ -43,7 +44,6 @@ from deepsecurity.compliance_templates import (
     soc2_cc6_6,
     soc2_cc7_1,
 )
-
 
 REGISTRY: dict[str, ModuleType] = {
     # SOC2 — AICPA Trust Services Criteria (2017 rev, ref. 2022 points-of-focus)

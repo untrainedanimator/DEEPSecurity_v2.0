@@ -14,6 +14,7 @@ Kernel-level visibility is what EDR products (CrowdStrike / SentinelOne /
 MS Defender / etc.) ship. We stay in user-space on purpose: no signed
 driver, no elevated install, no kernel complexity.
 """
+
 from __future__ import annotations
 
 import os
@@ -52,8 +53,13 @@ def _windows_drive_roots() -> list[Path]:
 
 def _unix_user_roots() -> list[Path]:
     """Common user-writable paths on Linux/macOS."""
-    candidates = [Path("/home"), Path("/Users"), Path("/tmp"), Path("/var/tmp"),
-                  Path(os.path.expanduser("~"))]
+    candidates = [
+        Path("/home"),
+        Path("/Users"),
+        Path("/tmp"),
+        Path("/var/tmp"),
+        Path(os.path.expanduser("~")),
+    ]
     return [p for p in candidates if p.exists() and p.is_dir()]
 
 
@@ -194,6 +200,7 @@ def resolve_scope(scope: str | None) -> list[Path] | None:
     """Return the paths for a named scope, or None for an unknown scope."""
     fn = _SCOPE_PRESETS.get(scope) if scope else None
     return fn() if fn else None
+
 
 try:  # pragma: no cover — optional dep
     from watchdog.events import FileSystemEventHandler  # type: ignore[import-not-found]
@@ -486,8 +493,7 @@ class WatchdogController:
         if not _AVAILABLE:
             return {
                 "started": False,
-                "reason": "watchdog package not installed. "
-                          "pip install \"deepsecurity[watchdog]\"",
+                "reason": 'watchdog package not installed. pip install "deepsecurity[watchdog]"',
             }
 
         # Resolve the target list.
@@ -515,7 +521,7 @@ class WatchdogController:
             return {
                 "started": False,
                 "reason": "no path/scope supplied and no DEEPSEC_SCAN_ROOT configured. "
-                          "Pick a path, use scope=\"system\", or set DEEPSEC_SCAN_ROOT.",
+                'Pick a path, use scope="system", or set DEEPSEC_SCAN_ROOT.',
             }
 
         with self._lock:
@@ -548,7 +554,8 @@ class WatchdogController:
             stopped_paths = list(self._paths)
             self._paths = []
             audit_log(
-                actor="system", action="watchdog.stopped",
+                actor="system",
+                action="watchdog.stopped",
                 details={"paths": stopped_paths},
             )
             _log.info("watchdog.stopped")

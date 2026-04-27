@@ -1,4 +1,5 @@
 """DLP findings browser + filter. Enriches rows with MITRE ATT&CK tags."""
+
 from __future__ import annotations
 
 from typing import Any

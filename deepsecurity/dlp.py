@@ -14,6 +14,7 @@ Design:
       the alerts bus. Low-severity (emails, single credit-card matches)
       are logged but not alerted by default.
 """
+
 from __future__ import annotations
 
 import re
@@ -64,7 +65,7 @@ def _finditer_with_timeout(
         try:
             for m in pattern.finditer(text):
                 result.append(m)
-        except BaseException as e:  # noqa: BLE001 — bubble via crash[]
+        except BaseException as e:
             crash.append(e)
         finally:
             done.set()
@@ -88,6 +89,27 @@ class DLPPattern:
     severity: Severity
     # How many bytes of context to keep around the match for the preview.
     context: int = 20
+    # Optional post-match validator. Receives the matched text; returns
+    # True to keep the finding, False to drop it. Used by the Luhn-checked
+    # credit_card pattern so we don't fire on random 16-digit strings.
+    # Tuple-typed (rather than Callable) to keep the dataclass hashable.
+    validator: object | None = None  # actually Callable[[str], bool] | None
+
+
+def _luhn_valid(digits: str) -> bool:
+    """Luhn check on a string of digits (separators stripped)."""
+    n = [int(c) for c in digits if c.isdigit()]
+    if len(n) < 13 or len(n) > 19:
+        return False
+    total = 0
+    parity = len(n) % 2
+    for i, d in enumerate(n):
+        if i % 2 == parity:
+            d *= 2
+            if d > 9:
+                d -= 9
+        total += d
+    return total % 10 == 0
 
 
 def _c(p: str, flags: int = re.MULTILINE) -> re.Pattern[str]:
@@ -162,6 +184,32 @@ PATTERNS: tuple[DLPPattern, ...] = (
         # Visa/MC/Amex/Discover prefixes, Luhn-unchecked for speed.
         _c(r"\b(?:4\d{3}|5[1-5]\d{2}|3[47]\d{2}|6011)[\s-]?\d{4}[\s-]?\d{4}[\s-]?\d{4}\b"),
         "medium",
+    ),
+    # v2.5: a Luhn-validated, brand-aware credit-card pattern. The
+    # regex is the broad shape; the validator filters out non-CC
+    # 16-digit strings (timestamps, sequential test data, etc.) so the
+    # finding is high-precision and worth alerting on.
+    # Brands recognised:
+    #   Visa      4xxxxxxxxxxxxxxx (13 or 16 digits)
+    #   MasterCard 51-55 / 2221-2720 (16)
+    #   Amex      34 / 37 (15)
+    #   Discover  6011 / 65 / 644-649 / 622126-622925 (16)
+    #   JCB       3528-3589 (16)
+    #   Diners    300-305 / 36 / 38 (14)
+    DLPPattern(
+        "credit_card",
+        _c(
+            r"\b(?:"
+            r"4\d{3}(?:[\s-]?\d{4}){2}[\s-]?\d{1,4}"  # Visa 13 or 16
+            r"|5[1-5]\d{2}(?:[\s-]?\d{4}){3}"  # MC 16
+            r"|3[47]\d{2}[\s-]?\d{6}[\s-]?\d{5}"  # Amex 15
+            r"|(?:6011|65\d{2}|64[4-9]\d)(?:[\s-]?\d{4}){3}"  # Discover 16
+            r"|35(?:2[89]|[3-8]\d)(?:[\s-]?\d{4}){3}"  # JCB 16
+            r"|3(?:0[0-5]|[68]\d)\d(?:[\s-]?\d{4}){2}[\s-]?\d{2}"  # Diners 14
+            r")\b"
+        ),
+        "high",
+        validator=_luhn_valid,
     ),
     # --- Low: emails (PII, often legitimate) -------------------------
     DLPPattern(
@@ -357,9 +405,7 @@ def scan_text(content: str, file_path: str) -> list[DLPFinding]:
         try:
             matches = _finditer_with_timeout(pat.regex, content, DLP_REGEX_TIMEOUT_S)
         except Exception:
-            _log.exception(
-                "dlp.regex_error", pattern=pat.name, file_path=file_path
-            )
+            _log.exception("dlp.regex_error", pattern=pat.name, file_path=file_path)
             continue
         if matches is None:
             _log.warning(
@@ -371,6 +417,16 @@ def scan_text(content: str, file_path: str) -> list[DLPFinding]:
             continue
 
         for m in matches:
+            # v2.5: optional post-match validator (used by the Luhn-
+            # checked credit_card pattern) — drop the match if it fails.
+            if pat.validator is not None:
+                try:
+                    if not pat.validator(m.group(0)):  # type: ignore[operator]
+                        continue
+                except Exception:
+                    _log.exception("dlp.validator_error", pattern=pat.name)
+                    continue
+
             # Find the line number this match starts on.
             pos = m.start()
             line_no = 1

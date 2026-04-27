@@ -1,4 +1,5 @@
 """Prometheus exposition format sanity."""
+
 from __future__ import annotations
 
 from deepsecurity.metrics import Metrics

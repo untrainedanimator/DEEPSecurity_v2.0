@@ -1,0 +1,227 @@
+# Default values for DEEPSecurity v3.0.0.
+#
+# This chart aims to be production-deployable with the defaults below
+# (Recreate strategy, non-root, read-only root FS, dropped caps,
+# NetworkPolicy on, PDB on). Override per environment in your values
+# overlay.
+
+image:
+  repository: ghcr.io/your-account/deepsecurity
+  tag: ""              # default: Chart.appVersion
+  pullPolicy: IfNotPresent
+  pullSecrets: []      # e.g. [{name: ghcr-pull}]
+
+replicaCount: 1        # bump and switch to redis state backend below
+
+# DEEPSecurity is a stateful service when SQLite is the database. With
+# Postgres + Redis state backend, replicas > 1 work. Recreate is the
+# default to avoid two replicas writing the same SQLite file.
+strategy:
+  type: Recreate
+
+# ---------------------------------------------------------------------------
+# Application config — every value below maps to a DEEPSEC_* env var.
+# Secrets (jwt, secret_key, OIDC client secret, audit-sink tokens) are
+# *not* set here — they live in the Secret manifest, populated by the
+# operator via --set-string or external-secrets.
+# ---------------------------------------------------------------------------
+config:
+  env: production
+  host: 0.0.0.0
+  port: 5000
+
+  # CORS — comma-separated, no wildcards.
+  corsOrigins: "https://deepsec.example.com"
+
+  # Database — point at a managed Postgres in production.
+  databaseUrl: "postgresql+psycopg://deepsec:CHANGE_ME@postgres:5432/deepsec"
+
+  # State backend — required for replicas > 1.
+  stateBackend: "redis"
+  redisUrl: "redis://redis:6379/0"
+
+  # OIDC — disabled by default, set the discovery URL to enable.
+  oidc:
+    enabled: false
+    discoveryUrl: ""
+    clientId: ""
+    redirectUri: ""
+    adminGroups: "deepsec-admin"
+    securityGroups: "deepsec-security"
+    analystGroups: "deepsec-analyst"
+
+  # TLS — three modes: off | cert | self-signed.
+  # In Kubernetes, ``off`` is the default because TLS termination
+  # belongs at the Ingress / Service Mesh layer. Switch to ``cert`` if
+  # you want end-to-end TLS from Ingress to pod (cert files mounted
+  # via Secret).
+  tls:
+    mode: "off"
+    certPath: "/etc/deepsec/tls/tls.crt"
+    keyPath: "/etc/deepsec/tls/tls.key"
+    selfSignedDays: 365
+    hstsMaxAge: 31536000
+
+  # External audit sinks — opt-in for SOC2 evidence replication.
+  auditSinks:
+    webhookUrl: ""        # https://collector.example/audit
+    syslogHost: ""        # syslog.internal
+    syslogPort: 514
+    syslogProtocol: "udp"
+    filePath: ""          # /var/log/deepsec/audit.jsonl (mount a PVC)
+    batchSize: 64
+    flushIntervalS: 2.0
+    queueMax: 10000
+
+  logLevel: "INFO"
+  logJson: true
+
+# ---------------------------------------------------------------------------
+# Pod security — non-root, read-only root, dropped caps. These are SOC2
+# / CIS Kubernetes Benchmark defaults. Some operators may need to relax
+# readOnlyRootFilesystem if using SQLite — set persistence below.
+# ---------------------------------------------------------------------------
+podSecurityContext:
+  fsGroup: 10001
+  runAsUser: 10001
+  runAsGroup: 10001
+  runAsNonRoot: true
+  seccompProfile:
+    type: RuntimeDefault
+
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  runAsNonRoot: true
+  runAsUser: 10001
+  runAsGroup: 10001
+  capabilities:
+    drop:
+      - ALL
+
+# ---------------------------------------------------------------------------
+# Service / Ingress
+# ---------------------------------------------------------------------------
+service:
+  type: ClusterIP
+  port: 80               # external port on the Service
+  targetPort: 5000       # container port
+
+ingress:
+  enabled: true
+  className: "nginx"
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: "10m"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+  hosts:
+    - host: deepsec.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - hosts:
+        - deepsec.example.com
+      secretName: deepsec-tls
+
+# ---------------------------------------------------------------------------
+# Resource sizing — sized for a single-tenant Windows fleet of 1k–5k
+# endpoints. Linear scale: ~50 MB RSS per 1k endpoints under steady
+# correlator load. Bump for larger fleets.
+# ---------------------------------------------------------------------------
+resources:
+  requests:
+    cpu: 250m
+    memory: 256Mi
+  limits:
+    cpu: "2"
+    memory: 1Gi
+
+# ---------------------------------------------------------------------------
+# Auto-scaling — only meaningful with state backend = redis.
+# ---------------------------------------------------------------------------
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 4
+  targetCPUUtilizationPercentage: 75
+  targetMemoryUtilizationPercentage: 80
+
+# ---------------------------------------------------------------------------
+# Probes
+# ---------------------------------------------------------------------------
+livenessProbe:
+  httpGet:
+    path: /healthz
+    port: 5000
+  initialDelaySeconds: 10
+  periodSeconds: 15
+  timeoutSeconds: 3
+  failureThreshold: 3
+
+readinessProbe:
+  httpGet:
+    path: /readyz
+    port: 5000
+  initialDelaySeconds: 5
+  periodSeconds: 10
+  timeoutSeconds: 3
+  failureThreshold: 3
+
+# ---------------------------------------------------------------------------
+# Persistence — required when DEEPSEC_DATABASE_URL is sqlite:///. Use
+# Postgres in real prod and disable this.
+# ---------------------------------------------------------------------------
+persistence:
+  enabled: false
+  storageClass: ""
+  accessMode: ReadWriteOnce
+  size: 10Gi
+  mountPath: /data
+
+# ---------------------------------------------------------------------------
+# Network policy — default-deny ingress except from the Ingress
+# namespace, default-deny egress except DNS + database + Redis.
+# ---------------------------------------------------------------------------
+networkPolicy:
+  enabled: true
+  ingressNamespaces:
+    - ingress-nginx
+  egress:
+    allowDNS: true
+    allowDatabase: true
+    allowRedis: true
+    allowAuditSink: true
+    extraRules: []
+
+# ---------------------------------------------------------------------------
+# PodDisruptionBudget
+# ---------------------------------------------------------------------------
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+# ---------------------------------------------------------------------------
+# ServiceAccount
+# ---------------------------------------------------------------------------
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+# ---------------------------------------------------------------------------
+# Service monitor (Prometheus Operator) — toggles a /metrics scrape.
+# ---------------------------------------------------------------------------
+serviceMonitor:
+  enabled: false
+  interval: 30s
+  scrapeTimeout: 10s
+  labels: {}
+
+# Extra env vars (in addition to those derived from .config)
+extraEnv: []
+extraEnvFrom: []
+nodeSelector: {}
+tolerations: []
+affinity: {}
+podAnnotations: {}
+podLabels: {}

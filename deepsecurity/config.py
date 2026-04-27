@@ -9,13 +9,15 @@ Usage:
 
 Validation happens at startup; the app refuses to boot with a bad config.
 """
+
 from __future__ import annotations
 
+import os
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -31,7 +33,7 @@ class Settings(BaseSettings):
     )
 
     # --- Core -----------------------------------------------------------
-    env: Literal["development", "staging", "production"] = "development"
+    env: Literal["development", "staging", "production", "test"] = "development"
     secret_key: str = Field(min_length=16)
     jwt_secret: str = Field(min_length=16)
     jwt_access_minutes: int = Field(default=60, ge=1, le=1440)
@@ -43,6 +45,22 @@ class Settings(BaseSettings):
     # Comma-separated list in env; parsed to a tuple of explicit origins.
     # "*" is explicitly forbidden.
     cors_origins: str = "http://localhost:5173"
+
+    # --- TLS (v3.0) -----------------------------------------------------
+    # Three modes:
+    #   "off"          — HTTP only. Use a reverse proxy for TLS termination.
+    #   "cert"         — operator provides ``tls_cert`` + ``tls_key`` PEM files.
+    #   "self-signed" — generate ephemeral self-signed cert at boot. Dev
+    #                    and single-tenant lab use only — browsers will
+    #                    show an "untrusted CA" warning unless the cert is
+    #                    explicitly trusted on each client.
+    tls_mode: Literal["off", "cert", "self-signed"] = "off"
+    tls_cert: Path | None = None
+    tls_key: Path | None = None
+    tls_self_signed_days: int = Field(default=365, ge=1, le=3650)
+    # When TLS is on, HSTS is reinforced to this max-age (seconds).
+    # Default 1 year — the SOC2 / OWASP recommended value.
+    tls_hsts_max_age: int = Field(default=31_536_000, ge=0)
 
     # --- Database -------------------------------------------------------
     database_url: str = "sqlite:///data/deepscan.db"
@@ -188,11 +206,99 @@ class Settings(BaseSettings):
     integrity_check_on_boot: bool = True
     integrity_snapshot_path: Path = Path("./data/.integrity.json")
 
+    # --- Distributed state (v2.5) --------------------------------------
+    # State backend for the rate limiter and the scan-state singleton.
+    # ``memory``  = v2.4 behaviour — single-process, in-memory deque +
+    #               threading.Lock. Default. Use this for single-node
+    #               deployments and tests.
+    # ``redis``   = atomic INCR + SETNX in Redis, so 2+ replicas share
+    #               the budget and scan lease cleanly. Set
+    #               DEEPSEC_REDIS_URL when you pick this.
+    # ``fake``    = fakeredis-backed Redis shim; tests only.
+    state_backend: Literal["memory", "redis", "fake"] = "memory"
+    redis_url: str = "redis://localhost:6379/0"
+
+    # --- Identity provider (v2.5) --------------------------------------
+    # Generic OIDC. The block is OFF by default — set
+    # DEEPSEC_OIDC_DISCOVERY_URL + client id/secret to turn it on.
+    # Works with Google, Microsoft Entra ID, Auth0, Okta, Keycloak, any
+    # OIDC-compliant provider. See docs/SECURITY.md for setup.
+    oidc_enabled: bool = False
+    oidc_discovery_url: str | None = None
+    oidc_client_id: str | None = None
+    oidc_client_secret: str | None = None
+    oidc_redirect_uri: str | None = None  # e.g. https://app.example/api/auth/oidc/callback
+    oidc_scopes: str = "openid profile email"
+    # Claim that maps to internal role. Default reads from "groups" then
+    # "roles" then a fallback. The values are matched against
+    # DEEPSEC_OIDC_ADMIN_GROUPS / SECURITY_GROUPS / ANALYST_GROUPS below.
+    oidc_role_claim: str = "groups"
+    oidc_admin_groups: str = "deepsec-admin"
+    oidc_security_groups: str = "deepsec-security"
+    oidc_analyst_groups: str = "deepsec-analyst"
+    # Default role assigned when the user has no matching group claim. Set
+    # to "" to deny logins that don't map to any role (the strict default).
+    oidc_default_role: str = ""
+
     # --- Dev bootstrap user --------------------------------------------
     # Replace with your real IdP before exposing beyond localhost.
     dev_user: str = "admin"
     dev_password: str = ""
     dev_role: str = "admin"
+
+    # --- v3.0 BEASTMODE — real-time + firewall + DNS + protection ------
+    # Real-time event ingest. ETW (Microsoft-Windows-Kernel-*) requires
+    # Windows + ``deepsecurity[edr]``. Sysmon consumer requires Sysmon
+    # itself to be installed and configured (see deploy/sysmon-config.xml).
+    realtime_enabled: bool = False
+    realtime_etw_enabled: bool = True
+    realtime_sysmon_enabled: bool = True
+    realtime_auto_kill_critical: bool = False  # opt-in for prod
+
+    # Host-based firewall via WinDivert + Defender Firewall API.
+    firewall_enabled: bool = False
+    firewall_policy_path: Path = Path("./data/firewall_policy.json")
+    firewall_windivert_filter: str = "outbound and ip"
+
+    # Local DNS sinkhole. Set listen_port to 53 (admin) or 5353 (no admin).
+    dns_sinkhole_enabled: bool = False
+    dns_sinkhole_bind: str = "127.0.0.1"
+    dns_sinkhole_port: int = 53
+    dns_sinkhole_upstream: str = "1.1.1.1:53"
+    dns_sinkhole_blocklist_path: Path = Path("./data/sinkhole_blocklist.txt")
+
+    # Self-protection layer.
+    protection_twin_enabled: bool = False
+    protection_mitigations_enabled: bool = True
+    protection_service_install: bool = False  # only via `deepsec service install`
+    # Code Integrity Guard (v3.1) — when False (default), CIG is applied
+    # in audit mode: every unsigned DLL load is logged, none are blocked.
+    # When True, CIG enforces MicrosoftSignedOnly and refuses to load
+    # any non-Microsoft-signed DLL into the process. Audit your deploy
+    # before flipping this — some Python deps ship unsigned native
+    # modules that would fail to load under enforce.
+    mitigations_cig_enforce: bool = False
+
+    # Lateral-movement auto-block (v3.1) — when True, an R-LM-01 detection
+    # (outbound SMB/RDP/WinRM/RPC to a private IP from an unexpected
+    # process) automatically adds a Defender Firewall deny rule for the
+    # offending image path. Default OFF because false positives can break
+    # legitimate IT workflows (admins doing PSExec, ops scripts, etc.).
+    # Audit-loud when on: every block writes an audit_log entry tagged
+    # ``firewall.lateral_block``.
+    lateral_movement_block: bool = False
+
+    # YARA-based memory scanner (v3.1) — when True, ``scan_pid`` also
+    # runs every loaded rule under ``memory_scan_yara_rules_dir``
+    # against each memory region. Off by default because yara-python
+    # is an optional dep (``pip install "deepsecurity[yara]"``) and the
+    # rules pack you choose drives both signal quality and CPU cost.
+    memory_scan_yara_enabled: bool = False
+    memory_scan_yara_rules_dir: Path = Path("./data/yara_rules")
+
+    # Opt-in TLS inspection (mitmproxy). DANGEROUS without consent — keep off.
+    tls_proxy_enabled: bool = False
+    tls_proxy_listen_port: int = 8080
 
     # --- Validators -----------------------------------------------------
     @field_validator("cors_origins", mode="after")
@@ -225,6 +331,36 @@ class Settings(BaseSettings):
     @classmethod
     def _resolve_paths(cls, v: Path) -> Path:
         return v.resolve()
+
+    @model_validator(mode="after")
+    def _harden_defaults_in_production(self) -> Settings:
+        """v3.1 — when ``DEEPSEC_ENV=production``, flip self-protection
+        defaults to ON unless the operator explicitly opted out.
+
+        We can't tell from a Pydantic field validator whether a default
+        came from the class attribute or from an env var, so we check
+        the env directly. The semantics are:
+
+          * If ``DEEPSEC_PROTECTION_TWIN_ENABLED`` is set in env → use it
+          * Else if ``DEEPSEC_ENV=production`` → True (hardened default)
+          * Else → False (the dev default)
+
+        Same shape applies to ``protection_service_install``. Apps that
+        absolutely need these off in prod can set them explicitly via
+        env to ``false`` and the validator respects that.
+        """
+        if self.env != "production":
+            return self
+        prod_overrides = {
+            "DEEPSEC_PROTECTION_TWIN_ENABLED": "protection_twin_enabled",
+            "DEEPSEC_PROTECTION_SERVICE_INSTALL": "protection_service_install",
+        }
+        for env_key, attr in prod_overrides.items():
+            if env_key in os.environ:
+                # Operator made an explicit choice; keep it.
+                continue
+            object.__setattr__(self, attr, True)
+        return self
 
     @property
     def cors_origin_list(self) -> list[str]:

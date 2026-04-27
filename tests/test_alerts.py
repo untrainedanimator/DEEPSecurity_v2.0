@@ -1,4 +1,5 @@
 """Alert bus routing + non-blocking dispatch + CEF formatting."""
+
 from __future__ import annotations
 
 import threading
@@ -21,7 +22,7 @@ class _RecordingSink(AlertSink):
         self.fail = fail
         self._ev = threading.Event()
 
-    def send(self, ev: AlertEvent) -> None:  # noqa: D401
+    def send(self, ev: AlertEvent) -> None:
         if self.fail:
             raise RuntimeError("sink boom")
         self.events.append(ev)

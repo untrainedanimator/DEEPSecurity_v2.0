@@ -8,6 +8,7 @@ Cross-platform via psutil. On Windows / macOS some fields (pid, process
 name) may be unavailable without elevated privileges; in that case we
 surface what we can and say so.
 """
+
 from __future__ import annotations
 
 from typing import Any
@@ -70,8 +71,12 @@ def connections() -> Any:
     try:
         raw = psutil.net_connections(kind=kind)
     except (psutil.AccessDenied, PermissionError):
-        return jsonify({"error": "insufficient_privileges",
-                        "message": "psutil.net_connections requires elevated rights on this OS"}), 403
+        return jsonify(
+            {
+                "error": "insufficient_privileges",
+                "message": "psutil.net_connections requires elevated rights on this OS",
+            }
+        ), 403
 
     out: list[dict[str, Any]] = []
     for c in raw:
@@ -86,7 +91,9 @@ def connections() -> Any:
             "status": c.status,
             "pid": c.pid,
             "process": _process_name(c.pid),
-            "reputation": reputation.lookup(remote.get("ip", "")) if remote else {"known_bad": False},
+            "reputation": reputation.lookup(remote.get("ip", ""))
+            if remote
+            else {"known_bad": False},
         }
         out.append(row)
 

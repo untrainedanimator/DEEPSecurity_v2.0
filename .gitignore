@@ -5,6 +5,8 @@ __pycache__/
 *.so
 .Python
 .venv/
+.venv-linux/
+.venv-*/
 venv/
 env/
 ENV/
@@ -89,3 +91,16 @@ logs/failure_*.txt
 # (not typically in the repo, but hedged)
 test.db
 test.db-journal
+
+# v3.0+ runtime artefacts — never commit these.
+data/tls/                       # self-signed cert + key
+data/yara_rules/*.cache         # YARA compiled cache (rules themselves OK to commit)
+data/backups/                   # local backup snapshots
+data/audit/                     # audit JSONL sink output
+data/.integrity.json
+data/sinkhole_blocklist.txt     # operator-curated; ship via deploy not git
+
+# Audit/critique tool outputs — generated, not source.
+DEEPSecurity_v2_Production_Readiness_Critique.docx
+*.tmp.[0-9]*
+**/ScanPanel.jsx.tmp.*

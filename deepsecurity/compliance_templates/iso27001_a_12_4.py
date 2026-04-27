@@ -11,9 +11,10 @@ For DEEPSecurity, the evidence of adequate logging is:
       shouldn't, per `purge_older_than`)
     - Log destinations (DB + structured stdout + optional Syslog/CEF/SMTP)
 """
+
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy.orm import Session
@@ -21,7 +22,6 @@ from sqlalchemy.orm import Session
 from deepsecurity.compliance import DateWindow
 from deepsecurity.config import settings
 from deepsecurity.models import AuditLog
-
 
 TEMPLATE_ID = "iso27001-a-12-4"
 TITLE = "ISO 27001 A.12.4 — Logging and monitoring"
@@ -63,21 +63,15 @@ def build(session: Session, window: DateWindow) -> dict[str, Any]:
         if a.status in {"denied", "forbidden", "unauthorized"}:
             denials += 1
 
-    coverage = {
-        cat: by_action.get(cat, 0) for cat in _REQUIRED_CATEGORIES
-    }
+    coverage = {cat: by_action.get(cat, 0) for cat in _REQUIRED_CATEGORIES}
     categories_with_no_events = [k for k, v in coverage.items() if v == 0]
 
     # Retention: do events older than retention_days still exist?
-    retention_check_cutoff = datetime.now(timezone.utc) - _relativedelta_days(
-        settings.retention_days
-    )
+    retention_check_cutoff = datetime.now(UTC) - _relativedelta_days(settings.retention_days)
     # We use the session directly so the count reflects the live DB,
     # not just the window rows.
     stale_events = (
-        session.query(AuditLog)
-        .filter(AuditLog.timestamp < retention_check_cutoff)
-        .count()
+        session.query(AuditLog).filter(AuditLog.timestamp < retention_check_cutoff).count()
     )
 
     destinations = {
@@ -95,7 +89,7 @@ def build(session: Session, window: DateWindow) -> dict[str, Any]:
         "title": TITLE,
         "control_ref": CONTROL_REF,
         "description": DESCRIPTION,
-        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "generated_at": datetime.now(UTC).isoformat(),
         "window": {
             "start": window.start.isoformat(),
             "end": window.end.isoformat(),
@@ -103,17 +97,13 @@ def build(session: Session, window: DateWindow) -> dict[str, Any]:
         "volume": {
             "total_events": len(audit),
             "denials": denials,
-            "by_action_top_20": dict(
-                sorted(by_action.items(), key=lambda kv: -kv[1])[:20]
-            ),
+            "by_action_top_20": dict(sorted(by_action.items(), key=lambda kv: -kv[1])[:20]),
             "by_actor": by_actor,
         },
         "category_coverage": {
             "required": sorted(_REQUIRED_CATEGORIES),
             "counts": coverage,
-            "categories_with_no_events_in_window": sorted(
-                categories_with_no_events
-            ),
+            "categories_with_no_events_in_window": sorted(categories_with_no_events),
         },
         "retention": {
             "policy_days": settings.retention_days,
@@ -123,7 +113,7 @@ def build(session: Session, window: DateWindow) -> dict[str, Any]:
     }
 
 
-def _relativedelta_days(days: int):  # noqa: ANN202
+def _relativedelta_days(days: int):
     from datetime import timedelta
 
     return timedelta(days=days)

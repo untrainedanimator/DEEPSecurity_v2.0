@@ -3,6 +3,7 @@
 Shows which outbound channels are configured (console / slack / webhook /
 syslog / email) and lets the operator push a test event through them.
 """
+
 from __future__ import annotations
 
 from typing import Any

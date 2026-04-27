@@ -1,0 +1,27 @@
+apiVersion: v2
+name: deepsecurity
+description: |
+  DEEPSecurity — user-space DLP / compliance / audit overlay.
+  Closes the v3 production gap "no Kubernetes / Helm manifest".
+type: application
+version: 3.0.0
+appVersion: "3.0.0"
+keywords:
+  - security
+  - dlp
+  - compliance
+  - audit
+  - mitre-attack
+  - siem
+home: https://github.com/your-account/deepsecurity
+maintainers:
+  - name: dino
+    email: ops@example.com
+icon: https://raw.githubusercontent.com/your-account/deepsecurity/main/docs/logo.png
+sources:
+  - https://github.com/your-account/deepsecurity
+annotations:
+  artifacthub.io/license: MIT
+  artifacthub.io/changes: |
+    - kind: added
+      description: Initial Helm chart shipping with v3.0.0 GA.

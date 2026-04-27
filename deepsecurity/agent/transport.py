@@ -3,6 +3,7 @@
 Stdlib only (urllib) so the agent footprint stays tiny. Robust to network
 blips: connect + read timeouts, retries on 5xx, honest JSON parsing.
 """
+
 from __future__ import annotations
 
 import json
@@ -66,7 +67,7 @@ class AgentTransport:
                 return json.loads(raw.decode("utf-8"))
             except urllib.error.HTTPError as e:
                 if e.code in {502, 503, 504} and attempt < retries:
-                    time.sleep(1.5 ** attempt)
+                    time.sleep(1.5**attempt)
                     continue
                 try:
                     payload = json.loads((e.read() or b"").decode("utf-8"))
@@ -76,7 +77,7 @@ class AgentTransport:
             except (urllib.error.URLError, TimeoutError) as e:
                 last_err = e
                 if attempt < retries:
-                    time.sleep(1.5 ** attempt)
+                    time.sleep(1.5**attempt)
                     continue
                 raise TransportError(f"network: {e}") from e
         raise TransportError(f"retries exhausted: {last_err}")

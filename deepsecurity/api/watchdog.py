@@ -1,4 +1,5 @@
 """Watchdog start/stop/status."""
+
 from __future__ import annotations
 
 from typing import Any
@@ -47,9 +48,7 @@ def start() -> Any:
         paths = [str(data["path"])]
 
     valid_scopes = {"system", "user_risk"}
-    result = controller.start(
-        paths, scope=scope if scope in valid_scopes else None
-    )
+    result = controller.start(paths, scope=scope if scope in valid_scopes else None)
     code = 200 if result.get("started") else 400
     return jsonify(result), code
 

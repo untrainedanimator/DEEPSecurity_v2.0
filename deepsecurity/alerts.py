@@ -12,6 +12,7 @@ Routing is a list of rules evaluated in order. The first match dispatches
 (and then we stop, unless `fan_out=True`). Non-blocking: every dispatch
 is fired on a worker thread; a failing sink never affects the caller.
 """
+
 from __future__ import annotations
 
 import json
@@ -20,10 +21,11 @@ import socket
 import ssl
 import threading
 import urllib.request
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from email.mime.text import MIMEText
-from typing import Any, Callable
+from typing import Any, ClassVar
 
 from deepsecurity.config import settings
 from deepsecurity.logging_config import get_logger
@@ -46,7 +48,7 @@ class AlertEvent:
     actor: str | None = None
     file_path: str | None = None
     details: dict[str, Any] = field(default_factory=dict)
-    timestamp: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    timestamp: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -103,7 +105,7 @@ class WebhookSink(AlertSink):
             ctx = ssl.create_default_context()
             with urllib.request.urlopen(req, timeout=self._timeout, context=ctx) as resp:
                 resp.read()
-        except Exception:  # noqa: BLE001 — a failing sink never breaks the caller
+        except Exception:
             _log.exception("alert.webhook_failed", url=self._url)
 
 
@@ -123,9 +125,7 @@ class SlackSink(WebhookSink):
             "text": f"{emoji} *DEEPSecurity* `{ev.kind}` — {ev.summary}",
             "attachments": [
                 {
-                    "color": {"critical": "#c0392b", "high": "#e67e22"}.get(
-                        ev.severity, "#3498db"
-                    ),
+                    "color": {"critical": "#c0392b", "high": "#e67e22"}.get(ev.severity, "#3498db"),
                     "fields": [
                         {"title": "actor", "value": ev.actor or "—", "short": True},
                         {
@@ -160,7 +160,7 @@ class SyslogSink(AlertSink):
 
     FACILITY_LOCAL0 = 16
 
-    _SEV_MAP = {
+    _SEV_MAP: ClassVar[dict[str, int]] = {
         "critical": 2,
         "high": 3,
         "medium": 4,
@@ -210,7 +210,7 @@ class CefSyslogSink(AlertSink):
 
     FACILITY_LOCAL0 = 16
 
-    _SEV_MAP: dict[str, int] = {
+    _SEV_MAP: ClassVar[dict[str, int]] = {
         # CEF severity is 0-10. Map our severity labels accordingly.
         "info": 2,
         "low": 4,
@@ -220,7 +220,7 @@ class CefSyslogSink(AlertSink):
     }
 
     # Syslog severity for the envelope (separate from CEF body severity).
-    _SYSLOG_SEV: dict[str, int] = {
+    _SYSLOG_SEV: ClassVar[dict[str, int]] = {
         "critical": 2,
         "high": 3,
         "medium": 4,
@@ -279,9 +279,7 @@ class CefSyslogSink(AlertSink):
         sev = self._SEV_MAP.get(ev.severity, 4)
         # Name: short human label, Signature: the event kind.
         signature_id = self._escape_header(ev.kind or "deepsec.event")
-        name = self._escape_header(
-            (ev.summary or ev.kind or "detection")[:120]
-        )
+        name = self._escape_header((ev.summary or ev.kind or "detection")[:120])
 
         # Build extension. Map known fields onto standard CEF keys where we
         # can so SIEMs get extracted attributes; fall back to cs1..cs6 for
@@ -338,8 +336,7 @@ class CefSyslogSink(AlertSink):
 
     def send(self, ev: AlertEvent) -> None:
         envelope = (
-            f"<{self._pri(ev.severity)}>1 {ev.timestamp} {socket.gethostname()} "
-            f"deepsecurity - - - "
+            f"<{self._pri(ev.severity)}>1 {ev.timestamp} {socket.gethostname()} deepsecurity - - - "
         )
         payload = (envelope + self._cef_line(ev)).encode("utf-8", errors="replace")
 
@@ -446,12 +443,10 @@ class AlertBus:
                 def _safe_send(_sink: AlertSink = sink, _ev: AlertEvent = ev) -> None:
                     try:
                         _sink.send(_ev)
-                    except Exception:  # noqa: BLE001 — a failing sink never breaks the bus
+                    except Exception:
                         _log.exception("alert.sink_failed", sink=_sink.name)
 
-                threading.Thread(
-                    target=_safe_send, daemon=True, name=f"alert-{sink.name}"
-                ).start()
+                threading.Thread(target=_safe_send, daemon=True, name=f"alert-{sink.name}").start()
             fired = True
             if not rule.fan_out:
                 break

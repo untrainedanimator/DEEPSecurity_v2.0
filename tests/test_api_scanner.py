@@ -1,7 +1,7 @@
 """API-level scanner tests — end-to-end via Flask test client."""
+
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 from flask.testing import FlaskClient

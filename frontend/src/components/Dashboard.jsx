@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import ScanPanel from './ScanPanel.jsx'
 import RealtimePanel from './RealtimePanel.jsx'
+import BeastmodePanel from './BeastmodePanel.jsx'
 import QuarantinePanel from './QuarantinePanel.jsx'
 import DLPPanel from './DLPPanel.jsx'
 import SystemPanel from './SystemPanel.jsx'
@@ -12,6 +13,7 @@ import AuditPanel from './AuditPanel.jsx'
 const TABS = [
   { id: 'scan', label: 'Live scan' },
   { id: 'realtime', label: 'Realtime' },
+  { id: 'beastmode', label: 'BEASTMODE' },
   { id: 'processes', label: 'Processes' },
   { id: 'quarantine', label: 'Quarantine' },
   { id: 'dlp', label: 'DLP findings' },
@@ -53,6 +55,7 @@ export default function Dashboard({ token }) {
       <section className="tab-body">
         {tab === 'scan' && <ScanPanel token={token} />}
         {tab === 'realtime' && <RealtimePanel token={token} />}
+        {tab === 'beastmode' && <BeastmodePanel token={token} />}
         {tab === 'processes' && <ProcessPanel token={token} />}
         {tab === 'quarantine' && <QuarantinePanel token={token} />}
         {tab === 'dlp' && <DLPPanel token={token} />}

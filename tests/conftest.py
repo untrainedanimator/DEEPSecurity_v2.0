@@ -6,9 +6,9 @@ Strategy:
       deepsecurity.config. The singleton is reset via cache_clear().
     - The DB is a file SQLite under tmp_path so the test suite is fully isolated.
 """
+
 from __future__ import annotations
 
-import os
 from collections.abc import Generator
 from pathlib import Path
 
@@ -45,6 +45,16 @@ def temp_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Generator[Path,
         "DEEPSEC_DEV_USER": "admin",
         "DEEPSEC_DEV_PASSWORD": "correct-horse-battery-staple",
         "DEEPSEC_DEV_ROLE": "admin",
+        # v2.5: ALWAYS disable the watchdog autostart in tests. The
+        # autostart hook used to fire audit_log() against the pytest
+        # temp DB before init_db() created the tables — race condition
+        # that surfaced on Python 3.14. Setting both to safe defaults.
+        "DEEPSEC_WATCHDOG_AUTOSTART": "",
+        # v2.5: state backend defaults to in-memory for tests. Tests that
+        # want the Redis path use DEEPSEC_STATE_BACKEND=fake explicitly.
+        "DEEPSEC_STATE_BACKEND": "memory",
+        # v2.5: OIDC off by default in tests. test_oidc.py overrides.
+        "DEEPSEC_OIDC_ENABLED": "false",
     }
     for k, v in env.items():
         monkeypatch.setenv(k, v)
@@ -58,10 +68,12 @@ def temp_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Generator[Path,
     # next time a fixture runs.
     from deepsecurity.config import get_settings
     from deepsecurity.db import _session_factory, get_engine
+    from deepsecurity.state_backend import reset_backend
 
     get_settings.cache_clear()
     get_engine.cache_clear()
     _session_factory.cache_clear()
+    reset_backend()
 
     yield tmp_path
 
@@ -78,6 +90,7 @@ def temp_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Generator[Path,
     get_settings.cache_clear()
     get_engine.cache_clear()
     _session_factory.cache_clear()
+    reset_backend()
 
     # Force a GC pass NOW so any lingering sqlite3.Connection wrappers
     # finalise inside the fixture (where the filterwarnings rules apply
@@ -106,9 +119,12 @@ def scan_root(temp_env: Path) -> Path:
 
 @pytest.fixture
 def fresh_state() -> Generator[None, None, None]:
-    """Reset the process-wide scan_state singleton between tests."""
+    """Reset the process-wide scan_state singleton + state backend between tests."""
     from deepsecurity import scan_state as sstate
+    from deepsecurity.state_backend import reset_backend
 
+    reset_backend()
     sstate.state = sstate.ScanState()
     yield
+    reset_backend()
     sstate.state = sstate.ScanState()

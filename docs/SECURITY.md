@@ -62,8 +62,51 @@ issue for anything that describes an exploitable bug.
 - Run the ML layer if no model is configured. The layer reports honestly
   that it is disabled, and the scanner continues with signature + entropy.
 
+## Identity provider (v2.5+)
+
+Production deployments authenticate via **OIDC**. Set:
+
+```env
+DEEPSEC_OIDC_ENABLED=true
+DEEPSEC_OIDC_DISCOVERY_URL=https://<idp>/.well-known/openid-configuration
+DEEPSEC_OIDC_CLIENT_ID=...
+DEEPSEC_OIDC_CLIENT_SECRET=...
+DEEPSEC_OIDC_REDIRECT_URI=https://app.example/api/auth/oidc/callback
+DEEPSEC_OIDC_ADMIN_GROUPS=deepsec-admin
+DEEPSEC_OIDC_SECURITY_GROUPS=deepsec-security
+DEEPSEC_OIDC_ANALYST_GROUPS=deepsec-analyst
+```
+
+The login flow:
+
+1. Browser hits `GET /api/auth/oidc/login` → DEEPSecurity redirects to the IdP.
+2. IdP authenticates the user and bounces back to `/api/auth/oidc/callback`.
+3. DEEPSecurity exchanges the code, validates the ID token (and nonce),
+   matches the `groups`/`roles` claim against `*_GROUPS`, mints a
+   short-lived JWT, redirects the SPA with `#access_token=...&role=...`.
+4. The SPA stores the token (sessionStorage / memory) and uses it as a
+   `Authorization: Bearer ...` header for every subsequent API call.
+
+**Strict default**: a user whose claims match none of the configured
+groups is **denied** unless `DEEPSEC_OIDC_DEFAULT_ROLE` is set. This
+prevents an IdP misconfiguration from silently granting access.
+
+**Dev-password fallback**: `POST /api/auth/login` is automatically
+**disabled** when `DEEPSEC_ENV=production`. Use it only in
+`development` / `staging`.
+
 ## Change log (security-relevant)
 
+- 2026-04-26 (v2.5.0) — Added OIDC identity provider via authlib;
+  `/api/auth/login` (dev password) is now refused in production.
+- 2026-04-26 (v2.5.0) — Distributed state via Redis (rate-limit + scan
+  lease). Multi-replica deployments no longer race or get
+  multiplicative budgets.
+- 2026-04-26 (v2.5.0) — CI mypy + pip-audit are now fail-fast (no more
+  `|| true`). Trivy scans the container image; Syft attaches a
+  CycloneDX SBOM to every release.
+- 2026-04-26 (v2.5.0) — Alembic migrations are the source of truth for
+  schema; `init_db()` upgrades to head on startup.
 - 2026-04-23 — Removed the JWT exception fallback in `routes/scanner.py` that
   auto-logged any caller in as a "debug" analyst.
 - 2026-04-23 — Removed `cors_allowed_origins="*"` from SocketIO; CORS is now

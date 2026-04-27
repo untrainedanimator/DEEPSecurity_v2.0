@@ -17,16 +17,16 @@ For DEEPSecurity, the evidence is:
       we can't measure that directly but we can report the volume they
       would need to review)
 """
+
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy.orm import Session
 
 from deepsecurity.compliance import DateWindow
 from deepsecurity.models import AuditLog, DLPFinding, ScanResult, ScanSession
-
 
 TEMPLATE_ID = "hipaa-164-308-a-1"
 TITLE = "HIPAA §164.308(a)(1) — Security management process"
@@ -99,7 +99,7 @@ def build(session: Session, window: DateWindow) -> dict[str, Any]:
         "title": TITLE,
         "control_ref": CONTROL_REF,
         "description": DESCRIPTION,
-        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "generated_at": datetime.now(UTC).isoformat(),
         "window": {
             "start": window.start.isoformat(),
             "end": window.end.isoformat(),

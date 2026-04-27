@@ -1,4 +1,5 @@
 """Security headers + rate limit + request-size guard + metrics endpoint."""
+
 from __future__ import annotations
 
 from pathlib import Path

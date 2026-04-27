@@ -8,6 +8,7 @@ is read from globals or JSON files on disk.
 
 Blueprints are registered in a deterministic order and each owns its URL prefix.
 """
+
 from __future__ import annotations
 
 from datetime import timedelta
@@ -26,6 +27,7 @@ from deepsecurity.api.health import health_bp
 from deepsecurity.api.intel import intel_bp
 from deepsecurity.api.metrics import metrics_bp
 from deepsecurity.api.network import network_bp
+from deepsecurity.api.oidc import init_oidc, oidc_bp
 from deepsecurity.api.processes import processes_bp
 from deepsecurity.api.quarantine import quarantine_bp
 from deepsecurity.api.scanner import scanner_bp
@@ -74,6 +76,8 @@ def create_app() -> Flask:
     app.register_blueprint(health_bp)  # unprefixed: /healthz, /readyz
     app.register_blueprint(metrics_bp)  # unprefixed: /metrics
     app.register_blueprint(auth_bp, url_prefix="/api/auth")
+    app.register_blueprint(oidc_bp, url_prefix="/api/auth/oidc")
+    init_oidc(app)
     app.register_blueprint(scanner_bp, url_prefix="/api/scanner")
     app.register_blueprint(quarantine_bp, url_prefix="/api/quarantine")
     app.register_blueprint(audit_bp, url_prefix="/api/audit")
@@ -87,20 +91,43 @@ def create_app() -> Flask:
     app.register_blueprint(sinks_bp, url_prefix="/api/sinks")
     app.register_blueprint(agents_bp, url_prefix="/api/agents")
 
+    # v3.0 BEASTMODE status surface — single-shot read-only endpoint
+    # the dashboard polls for the EDR / audit-sink / TLS / platform
+    # panel. Registered after every other blueprint so it sees the
+    # final config state.
+    from deepsecurity.api.v3 import v3_bp
+
+    app.register_blueprint(v3_bp, url_prefix="/api/v3")
+
     init_db()
+
+    # External audit sinks — opt-in via DEEPSEC_AUDIT_SINK_* env vars.
+    # No-op if none configured. Failures during sink boot must never
+    # block the server from starting (audit replication is best-effort).
+    try:
+        from deepsecurity import audit_sinks
+
+        audit_sinks.init_from_env()
+    except Exception:
+        _log.exception("audit_sinks.init_failed")
 
     # Self-integrity tripwire fires here if configured.
     try:
         from deepsecurity.integrity import boot_check
 
         boot_check()
-    except Exception:  # noqa: BLE001 — never let integrity block startup
+    except Exception:
         _log.exception("integrity.boot_check_failed")
 
     # Auto-start the realtime watchdog so the tool "just works" on boot.
     # Disable by setting DEEPSEC_WATCHDOG_AUTOSTART="" in the environment.
+    # v2.5: also unconditionally disabled when env == "test" so the
+    # pytest-temp-DB race that surfaced on Python 3.14 cannot recur.
     # Any failure here is logged but never blocks the server from starting.
-    _maybe_autostart_watchdog()
+    if settings.env != "test":
+        _maybe_autostart_watchdog()
+    else:
+        _log.info("watchdog.autostart.disabled_in_test_env")
 
     _log.info("api.ready", env=settings.env, cors=settings.cors_origin_list)
     return app
@@ -127,8 +154,7 @@ def _maybe_autostart_watchdog() -> None:
         if not controller.available:
             _log.warning(
                 "watchdog.autostart.skipped",
-                reason="watchdog package not installed — "
-                "pip install \"deepsecurity[watchdog]\"",
+                reason='watchdog package not installed — pip install "deepsecurity[watchdog]"',
             )
             return
         if controller.running:

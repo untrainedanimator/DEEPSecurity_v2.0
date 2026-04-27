@@ -19,6 +19,7 @@ Quarantine policy:
     "Quarantine" means a **copy** is made into the quarantine directory.
     The original is NEVER deleted automatically. That is an operator action.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -28,7 +29,7 @@ import os
 import shutil
 from collections.abc import Callable, Generator
 from dataclasses import asdict, dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from deepsecurity.alerts import AlertEvent
@@ -273,7 +274,7 @@ def quarantine_copy(path: Path, quarantine_dir: Path | None = None) -> Path:
     entry, which is the behaviour operators expect.
     """
     qdir = ensure_dir(quarantine_dir or settings.quarantine_dir)
-    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%SZ")
+    timestamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%SZ")
     sha_short = compute_sha256(path)[:8]
     target = qdir / f"{timestamp}_{sha_short}_{path.name}"
     shutil.copy2(str(path), str(target))
@@ -462,7 +463,9 @@ def run_dlp(path: Path, mime: str, session_id: int | None) -> list[DLPFinding]:
                 AlertEvent(
                     kind=f"dlp.{f.severity}",
                     severity=f.severity,
-                    summary=f"{f.pattern_name} detected in {Path(f.file_path).name}:{f.line_number}",
+                    summary=(
+                        f"{f.pattern_name} detected in {Path(f.file_path).name}:{f.line_number}"
+                    ),
                     file_path=f.file_path,
                     details={"pattern": f.pattern_name, "line": f.line_number},
                 )
@@ -589,7 +592,7 @@ def scan_directory(
                 if progress is not None:
                     try:
                         progress(det)
-                    except Exception:  # noqa: BLE001 — callback is untrusted
+                    except Exception:
                         _log.exception("scan.progress_callback_failed")
 
                 buffer.append(
@@ -621,7 +624,7 @@ def scan_directory(
                 scan_row.status = "cancelled" if state.snapshot()["cancelled"] else "completed"
                 scan_row.total_files = total
                 scan_row.total_detections = detections
-                scan_row.ended_at = datetime.now(timezone.utc)
+                scan_row.ended_at = datetime.now(UTC)
     finally:
         state.finish()
         duration = _t.monotonic() - scan_started

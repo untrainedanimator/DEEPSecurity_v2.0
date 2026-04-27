@@ -1,10 +1,11 @@
 """Command-line entry point for the endpoint agent.
 
-    deepsec-agent register --server https://deepsec.example --token <token>
-    deepsec-agent run
-    deepsec-agent status
-    deepsec-agent show-config
+deepsec-agent register --server https://deepsec.example --token <token>
+deepsec-agent run
+deepsec-agent status
+deepsec-agent show-config
 """
+
 from __future__ import annotations
 
 import json

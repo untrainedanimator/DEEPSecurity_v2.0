@@ -10,9 +10,10 @@ For DEEPSecurity the boundary evidence is:
     - Authentication denials at the boundary (bad JWT, no token, etc.)
     - The deployed security headers on every HTTP response
 """
+
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy.orm import Session
@@ -20,7 +21,6 @@ from sqlalchemy.orm import Session
 from deepsecurity.compliance import DateWindow
 from deepsecurity.config import settings
 from deepsecurity.models import AuditLog
-
 
 TEMPLATE_ID = "soc2-cc6-6"
 TITLE = "SOC2 CC6.6 — Boundary and perimeter protection"
@@ -41,22 +41,16 @@ def build(session: Session, window: DateWindow) -> dict[str, Any]:
         .all()
     )
 
-    rate_limit_denials = [
-        a for a in audit if a.action == "rate_limit.denied"
-    ]
-    auth_denials = [
-        a for a in audit if a.action in {"auth.denied", "auth.forbidden"}
-    ]
-    ip_reputation_hits = [
-        a for a in audit if a.action == "network.known_bad_ip"
-    ]
+    rate_limit_denials = [a for a in audit if a.action == "rate_limit.denied"]
+    auth_denials = [a for a in audit if a.action in {"auth.denied", "auth.forbidden"}]
+    ip_reputation_hits = [a for a in audit if a.action == "network.known_bad_ip"]
 
     return {
         "template_id": TEMPLATE_ID,
         "title": TITLE,
         "control_ref": CONTROL_REF,
         "description": DESCRIPTION,
-        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "generated_at": datetime.now(UTC).isoformat(),
         "window": {
             "start": window.start.isoformat(),
             "end": window.end.isoformat(),

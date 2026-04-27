@@ -1,0 +1,38 @@
+Thanks for installing {{ .Chart.Name }} v{{ .Chart.AppVersion }}.
+
+The release name is: {{ .Release.Name }}
+
+To check the status of your deployment:
+
+  kubectl --namespace {{ .Release.Namespace }} rollout status deployment/{{ include "deepsecurity.fullname" . }}
+
+{{- if .Values.ingress.enabled }}
+
+The dashboard is published at:
+{{- range .Values.ingress.hosts }}
+  https://{{ .host }}{{ (index .paths 0).path }}
+{{- end }}
+{{- else }}
+
+To reach the API from your laptop:
+  kubectl --namespace {{ .Release.Namespace }} port-forward svc/{{ include "deepsecurity.fullname" . }} 5000:{{ .Values.service.port }}
+  curl http://localhost:5000/healthz
+{{- end }}
+
+Audit-log replication: {{ if or .Values.config.auditSinks.webhookUrl .Values.config.auditSinks.syslogHost .Values.config.auditSinks.filePath -}}
+ENABLED. Events stream to your configured sink(s) plus the local DB.
+{{- else -}}
+DISABLED. For SOC2 evidence retention, set ``.config.auditSinks.webhookUrl``
+or ``.config.auditSinks.syslogHost`` and reinstall.
+{{- end }}
+
+TLS: {{ if eq .Values.config.tls.mode "off" -}}
+TERMINATED AT INGRESS. Backend speaks plain HTTP; the Ingress takes care
+of TLS. Make sure ``ingress.tls`` is populated.
+{{- else if eq .Values.config.tls.mode "cert" -}}
+END-TO-END. Backend pod terminates TLS using the operator-provided cert
+mounted at /etc/deepsec/tls/.
+{{- else -}}
+SELF-SIGNED. Backend generates an ephemeral cert at boot. Browsers will
+warn — for dev / lab only.
+{{- end }}

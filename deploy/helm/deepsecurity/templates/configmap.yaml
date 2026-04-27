@@ -1,0 +1,52 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "deepsecurity.fullname" . }}
+  labels:
+    {{- include "deepsecurity.labels" . | nindent 4 }}
+data:
+  DEEPSEC_ENV: {{ .Values.config.env | quote }}
+  DEEPSEC_HOST: {{ .Values.config.host | quote }}
+  DEEPSEC_PORT: {{ .Values.config.port | quote }}
+  DEEPSEC_CORS_ORIGINS: {{ .Values.config.corsOrigins | quote }}
+  DEEPSEC_DATABASE_URL: {{ .Values.config.databaseUrl | quote }}
+  DEEPSEC_STATE_BACKEND: {{ .Values.config.stateBackend | quote }}
+  DEEPSEC_REDIS_URL: {{ .Values.config.redisUrl | quote }}
+
+  DEEPSEC_OIDC_ENABLED: {{ .Values.config.oidc.enabled | quote }}
+  {{- if .Values.config.oidc.enabled }}
+  DEEPSEC_OIDC_DISCOVERY_URL: {{ .Values.config.oidc.discoveryUrl | quote }}
+  DEEPSEC_OIDC_CLIENT_ID: {{ .Values.config.oidc.clientId | quote }}
+  DEEPSEC_OIDC_REDIRECT_URI: {{ .Values.config.oidc.redirectUri | quote }}
+  DEEPSEC_OIDC_ADMIN_GROUPS: {{ .Values.config.oidc.adminGroups | quote }}
+  DEEPSEC_OIDC_SECURITY_GROUPS: {{ .Values.config.oidc.securityGroups | quote }}
+  DEEPSEC_OIDC_ANALYST_GROUPS: {{ .Values.config.oidc.analystGroups | quote }}
+  {{- end }}
+
+  DEEPSEC_TLS_MODE: {{ .Values.config.tls.mode | quote }}
+  {{- if eq .Values.config.tls.mode "cert" }}
+  DEEPSEC_TLS_CERT: {{ .Values.config.tls.certPath | quote }}
+  DEEPSEC_TLS_KEY: {{ .Values.config.tls.keyPath | quote }}
+  {{- end }}
+  DEEPSEC_TLS_SELF_SIGNED_DAYS: {{ .Values.config.tls.selfSignedDays | quote }}
+  DEEPSEC_TLS_HSTS_MAX_AGE: {{ .Values.config.tls.hstsMaxAge | quote }}
+
+  {{- with .Values.config.auditSinks }}
+  {{- if .webhookUrl }}
+  DEEPSEC_AUDIT_SINK_WEBHOOK_URL: {{ .webhookUrl | quote }}
+  {{- end }}
+  {{- if .syslogHost }}
+  DEEPSEC_AUDIT_SINK_SYSLOG_HOST: {{ .syslogHost | quote }}
+  DEEPSEC_AUDIT_SINK_SYSLOG_PORT: {{ .syslogPort | quote }}
+  DEEPSEC_AUDIT_SINK_SYSLOG_PROTOCOL: {{ .syslogProtocol | quote }}
+  {{- end }}
+  {{- if .filePath }}
+  DEEPSEC_AUDIT_SINK_FILE_PATH: {{ .filePath | quote }}
+  {{- end }}
+  DEEPSEC_AUDIT_SINK_BATCH_SIZE: {{ .batchSize | quote }}
+  DEEPSEC_AUDIT_SINK_FLUSH_INTERVAL_S: {{ .flushIntervalS | quote }}
+  DEEPSEC_AUDIT_SINK_QUEUE_MAX: {{ .queueMax | quote }}
+  {{- end }}
+
+  DEEPSEC_LOG_LEVEL: {{ .Values.config.logLevel | quote }}
+  DEEPSEC_LOG_JSON: {{ .Values.config.logJson | quote }}

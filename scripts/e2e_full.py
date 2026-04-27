@@ -24,6 +24,7 @@ Design notes:
       with a cleanup registered on a LIFO stack that runs in `finally`.
     - Auth: STAGE E logs in once; token is cached for later stages.
 """
+
 from __future__ import annotations
 
 import atexit
@@ -32,7 +33,6 @@ import json
 import os
 import re
 import shutil
-import signal
 import socket
 import subprocess
 import sys
@@ -41,11 +41,11 @@ import time
 import traceback
 import urllib.error
 import urllib.request
-from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from collections.abc import Callable
+from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Callable
-
+from typing import Any
 
 # ---------------------------------------------------------------------------
 # Paths and constants
@@ -59,7 +59,7 @@ DATA_DIR = REPO_ROOT / "data"
 SIGNATURES_PATH = DATA_DIR / "signatures.txt"
 SERVER_URL = "http://127.0.0.1:5000"
 
-START_TS = datetime.now(timezone.utc)
+START_TS = datetime.now(UTC)
 REPORT_PATH = LOG_DIR / f"e2e_{START_TS.strftime('%Y%m%dT%H%M%SZ')}.md"
 
 BUDGET_S = 600  # total 10-minute cap
@@ -101,7 +101,7 @@ def run_cleanup() -> None:
         fn = cleanup_stack.pop()
         try:
             fn()
-        except Exception:  # noqa: BLE001
+        except Exception:
             pass
 
 
@@ -146,9 +146,7 @@ def run_cmd(
 
 def ds(*args: str, timeout: int = 30) -> subprocess.CompletedProcess:
     """Invoke the deepsecurity CLI via its module path (bypasses entry-point wrapper)."""
-    return run_cmd(
-        [str(VENV_PY), "-m", "deepsecurity.cli", *args], timeout=timeout
-    )
+    return run_cmd([str(VENV_PY), "-m", "deepsecurity.cli", *args], timeout=timeout)
 
 
 def http(
@@ -214,9 +212,7 @@ def admin_password() -> str:
     env = dotenv()
     pw = os.environ.get("DEEPSEC_DEV_PASSWORD") or env.get("DEEPSEC_DEV_PASSWORD", "")
     if not pw:
-        raise StageFail(
-            "DEEPSEC_DEV_PASSWORD missing from env and .env; cannot authenticate"
-        )
+        raise StageFail("DEEPSEC_DEV_PASSWORD missing from env and .env; cannot authenticate")
     return pw
 
 
@@ -227,7 +223,7 @@ def wait_for_healthz(timeout: float = 30.0) -> bool:
             with urllib.request.urlopen(f"{SERVER_URL}/healthz", timeout=1.5) as r:
                 if r.status == 200:
                     return True
-        except Exception:  # noqa: BLE001
+        except Exception:
             pass
         time.sleep(0.4)
     return False
@@ -237,7 +233,7 @@ def tail_lines(path: Path, n: int = 20) -> str:
     try:
         lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
         return "\n".join(lines[-n:])
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         return f"(couldn't read {path}: {exc})"
 
 
@@ -264,12 +260,10 @@ def run_stage(code: str, name: str, fn: Callable[[], tuple[str, str, str]]) -> b
         print(f"--- last 20 lines of {SERVER_LOG} ---")
         print(tail_lines(SERVER_LOG, 20))
         return False
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         dur = now() - t0
         tb = traceback.format_exc(limit=3)
-        results.append(
-            Result(code, name, "FAIL", f"{type(e).__name__}: {e}", tb, dur)
-        )
+        results.append(Result(code, name, "FAIL", f"{type(e).__name__}: {e}", tb, dur))
         print(f"[{code}] FAIL — unexpected {type(e).__name__}: {e}", flush=True)
         print(tb)
         return False
@@ -321,7 +315,7 @@ def stage_A() -> tuple[str, str, str]:
     try:
         g = run_cmd(["git", "status", "--porcelain"], timeout=5)
         dirty = len([ln for ln in g.stdout.splitlines() if ln.strip()])
-    except Exception:  # noqa: BLE001
+    except Exception:
         pass
 
     return (
@@ -353,7 +347,7 @@ def stage_B() -> tuple[str, str, str]:
         try:
             with urllib.request.urlopen(f"{SERVER_URL}/healthz", timeout=1.0):
                 pass
-        except Exception:  # noqa: BLE001 — any failure means port is closed
+        except Exception:
             break
         time.sleep(0.4)
     else:
@@ -394,7 +388,8 @@ def stage_B() -> tuple[str, str, str]:
     if r.returncode != 0:
         # 1. FAILED/ERROR lines (if any).
         failed = [
-            ln for ln in stdout_lines
+            ln
+            for ln in stdout_lines
             if ln.startswith("FAILED ") or "FAILED" in ln or ln.startswith("ERROR ")
         ][:15]
         # 2. The short-summary block if pytest got far enough to emit it.
@@ -410,9 +405,7 @@ def stage_B() -> tuple[str, str, str]:
         #    output (e.g. collection error, import crash).
         if not failed:
             combined_tail = (
-                (r.stdout or "")[-2000:]
-                + "\n--- STDERR ---\n"
-                + (r.stderr or "")[-2000:]
+                (r.stdout or "")[-2000:] + "\n--- STDERR ---\n" + (r.stderr or "")[-2000:]
             )
             failed = [combined_tail]
 
@@ -444,12 +437,8 @@ def stage_C() -> tuple[str, str, str]:
     # Start clean — backend only.
     ds("stop", timeout=20)
     st = ds("start", "--no-browser", "--no-frontend", timeout=45)
-    if "started" not in (st.stdout + st.stderr).lower() and not wait_for_healthz(
-        timeout=10
-    ):
-        raise StageFail(
-            f"deepsecurity start didn't come up:\n{(st.stdout + st.stderr)[-800:]}"
-        )
+    if "started" not in (st.stdout + st.stderr).lower() and not wait_for_healthz(timeout=10):
+        raise StageFail(f"deepsecurity start didn't come up:\n{(st.stdout + st.stderr)[-800:]}")
 
     # healthy via status
     s2 = ds("status", timeout=10)
@@ -484,7 +473,7 @@ def wait_for_healthz_stopped(timeout: float = 10.0) -> bool:
             with urllib.request.urlopen(f"{SERVER_URL}/healthz", timeout=1.0) as _r:
                 pass
             time.sleep(0.3)
-        except Exception:  # noqa: BLE001
+        except Exception:
             return True
     return False
 
@@ -547,9 +536,7 @@ def stage_D() -> tuple[str, str, str]:
 def stage_E() -> tuple[str, str, str]:
     global _admin_token
     pw = admin_password()
-    status, body, _ = http(
-        "POST", "/api/auth/login", body={"username": "admin", "password": pw}
-    )
+    status, body, _ = http("POST", "/api/auth/login", body={"username": "admin", "password": pw})
     if status != 200 or not isinstance(body, dict) or "access_token" not in body:
         raise StageFail(f"login failed: status={status} body={str(body)[:200]}")
     _admin_token = body["access_token"]
@@ -576,8 +563,7 @@ def stage_E() -> tuple[str, str, str]:
     if not isinstance(body, dict) or not body.get("available"):
         raise StageFail(f"watchdog.available != true: {body}")
     wd_note = (
-        f"watchdog running={body.get('running')}, "
-        f"watching={len(body.get('watching') or [])} paths"
+        f"watchdog running={body.get('running')}, watching={len(body.get('watching') or [])} paths"
     )
 
     return "OK", f"login + 6 routes ok; {wd_note}", ""
@@ -644,9 +630,7 @@ def stage_F() -> tuple[str, str, str]:
         body={"path": str(tmp_scan), "quarantine": True},
     )
     if status not in (200, 202):
-        raise StageFail(
-            f"/api/scanner/start expected 200/202, got {status}: {str(body)[:300]}"
-        )
+        raise StageFail(f"/api/scanner/start expected 200/202, got {status}: {str(body)[:300]}")
 
     # Poll /api/scanner/sessions for a new row.
     deadline = now() + 45
@@ -705,7 +689,7 @@ def _read_metric(name: str) -> int:
     try:
         with urllib.request.urlopen(f"{SERVER_URL}/metrics", timeout=3.0) as r:
             text = r.read().decode("utf-8", errors="replace")
-    except Exception:  # noqa: BLE001
+    except Exception:
         return 0
     for line in text.splitlines():
         if line.startswith(name) and not line.startswith("#"):
@@ -784,15 +768,14 @@ def stage_G() -> tuple[str, str, str]:
             new = full[size_before:]
             tail_2k = full[-2048:]  # last ~20 log lines, cheap
 
-            if (
-                "e2e_watchdog_probe.bin" in new
-                and "watchdog.file_event" in new
-            ) or (
-                "e2e_watchdog_probe.bin" in tail_2k
-                and "watchdog.file_event" in tail_2k
+            if ("e2e_watchdog_probe.bin" in new and "watchdog.file_event" in new) or (
+                "e2e_watchdog_probe.bin" in tail_2k and "watchdog.file_event" in tail_2k
             ):
                 saw_watched = True
-            if "e2e_watchdog_probe_excluded.bin" in new or "e2e_watchdog_probe_excluded.bin" in tail_2k:
+            if (
+                "e2e_watchdog_probe_excluded.bin" in new
+                or "e2e_watchdog_probe_excluded.bin" in tail_2k
+            ):
                 saw_excluded = True
             last_tail_check = now()
         time.sleep(0.25)
@@ -800,10 +783,10 @@ def stage_G() -> tuple[str, str, str]:
     if not saw_watched:
         waited = f"{deadline - (deadline - 20.0):.1f}"
         raise StageFail(
-            f"watchdog did not log e2e_watchdog_probe.bin within 20s. "
-            f"If the tail of server.log shows the entry timestamped inside "
-            f"the window, the root cause is Windows file-flush lag — "
-            f"increase the window further in stage G."
+            "watchdog did not log e2e_watchdog_probe.bin within 20s. "
+            "If the tail of server.log shows the entry timestamped inside "
+            "the window, the root cause is Windows file-flush lag — "
+            "increase the window further in stage G."
         )
     if saw_excluded:
         raise StageFail(
@@ -834,38 +817,38 @@ _DLP_PAYLOADS = [
 def stage_H() -> tuple[str, str, str]:
     """Call scan_file_for_secrets directly via a subprocess — so we don't need
     to import deepsecurity modules inside this orchestrator process."""
-    script = (REPO_ROOT / "logs" / "_dlp_probe.py")
+    script = REPO_ROOT / "logs" / "_dlp_probe.py"
     payloads_json = json.dumps(_DLP_PAYLOADS)
     script.write_text(
-        'import json, sys, tempfile, os\n'
-        'from pathlib import Path\n'
-        'from deepsecurity.dlp import scan_file_for_secrets, PATTERNS\n'
-        f'payloads = json.loads({payloads_json!r})\n'
-        'known = {p.name for p in PATTERNS}\n'
-        'results = []\n'
-        'with tempfile.TemporaryDirectory() as td:\n'
-        '    for name, text in payloads:\n'
-        '        if name not in known:\n'
+        "import json, sys, tempfile, os\n"
+        "from pathlib import Path\n"
+        "from deepsecurity.dlp import scan_file_for_secrets, PATTERNS\n"
+        f"payloads = json.loads({payloads_json!r})\n"
+        "known = {p.name for p in PATTERNS}\n"
+        "results = []\n"
+        "with tempfile.TemporaryDirectory() as td:\n"
+        "    for name, text in payloads:\n"
+        "        if name not in known:\n"
         '            results.append((name, "KNOWN-MISSING", "not in PATTERNS"))\n'
-        '            continue\n'
+        "            continue\n"
         '        p = Path(td) / f"{name}.txt"\n'
         '        p.write_text(text + "\\n", encoding="utf-8")\n'
         '        hits = scan_file_for_secrets(p, "text/plain")\n'
-        '        names = [h.pattern_name for h in hits]\n'
-        '        if name not in names:\n'
+        "        names = [h.pattern_name for h in hits]\n"
+        "        if name not in names:\n"
         '            results.append((name, "FAIL", f"no hit; names={names}"))\n'
-        '        else:\n'
-        '            # check redaction\n'
+        "        else:\n"
+        "            # check redaction\n"
         '            leak = any(("AKIA" in h.redacted_preview or "ghp_A" in h.redacted_preview)\n'
-        '                       for h in hits if h.pattern_name == name)\n'
+        "                       for h in hits if h.pattern_name == name)\n"
         '            redacted_ok = all("****" in h.redacted_preview for h in hits if h.pattern_name == name)\n'
-        '            if leak:\n'
+        "            if leak:\n"
         '                results.append((name, "FAIL", "raw secret leaked into preview"))\n'
-        '            elif not redacted_ok:\n'
+        "            elif not redacted_ok:\n"
         '                results.append((name, "FAIL", "preview missing **** marker"))\n'
-        '            else:\n'
+        "            else:\n"
         '                results.append((name, "OK", f"{len(hits)} hit(s)"))\n'
-        'print(json.dumps(results))\n',
+        "print(json.dumps(results))\n",
         encoding="utf-8",
     )
     register_cleanup(lambda: script.unlink(missing_ok=True))
@@ -877,7 +860,7 @@ def stage_H() -> tuple[str, str, str]:
         )
     try:
         out = json.loads(r.stdout.strip().splitlines()[-1])
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         raise StageFail(f"couldn't parse dlp probe output: {e}\n{r.stdout[:400]}") from e
 
     fails = [row for row in out if row[1] == "FAIL"]
@@ -949,9 +932,7 @@ def stage_I() -> tuple[str, str, str]:
         body={"kind": "self_test", "payload": {}},
     )
     if status != 201 or "command_id" not in (body or {}):
-        raise StageFail(
-            f"queue-command expected 201+command_id, got {status}: {str(body)[:200]}"
-        )
+        raise StageFail(f"queue-command expected 201+command_id, got {status}: {str(body)[:200]}")
     cmd_id = body["command_id"]
 
     # Agent pulls commands
@@ -972,9 +953,7 @@ def stage_I() -> tuple[str, str, str]:
         raise StageFail(f"results expected 200, got {status}: {str(body)[:200]}")
 
     # Revoke
-    status, body, _ = http(
-        "DELETE", f"/api/agents/{agent_id}", bearer=_admin_token
-    )
+    status, body, _ = http("DELETE", f"/api/agents/{agent_id}", bearer=_admin_token)
     if status != 200:
         raise StageFail(f"revoke expected 200, got {status}: {str(body)[:200]}")
 
@@ -998,9 +977,7 @@ def stage_I() -> tuple[str, str, str]:
 
 def stage_J() -> tuple[str, str, str]:
     assert _admin_token
-    status, body, _ = http(
-        "GET", "/api/compliance/report?days=1", bearer=_admin_token
-    )
+    status, body, _ = http("GET", "/api/compliance/report?days=1", bearer=_admin_token)
     if status != 200:
         raise StageFail(f"compliance/report expected 200, got {status}")
     if not isinstance(body, dict):
@@ -1012,21 +989,17 @@ def stage_J() -> tuple[str, str, str]:
         raise StageFail(f"window.start >= window.end: {body['window']}")
 
     # CSV
-    status, body, hdrs = http(
-        "GET", "/api/compliance/audit.csv?days=1", bearer=_admin_token
-    )
+    status, body, hdrs = http("GET", "/api/compliance/audit.csv?days=1", bearer=_admin_token)
     if status != 200:
         raise StageFail(f"audit.csv expected 200, got {status}")
-    ctype = next(
-        (v for k, v in hdrs.items() if k.lower() == "content-type"), ""
-    )
+    ctype = next((v for k, v in hdrs.items() if k.lower() == "content-type"), "")
     if "text/csv" not in ctype.lower():
         raise StageFail(f"audit.csv content-type {ctype!r}")
     first = str(body).splitlines()[0] if body else ""
     if not first.startswith("timestamp,"):
         raise StageFail(f"audit.csv header unexpected: {first!r}")
 
-    return "OK", f"report keys present; window valid; csv header ok", ""
+    return "OK", "report keys present; window valid; csv header ok", ""
 
 
 # ===========================================================================
@@ -1065,7 +1038,7 @@ def stage_K() -> tuple[str, str, str]:
 
     probe = REPO_ROOT / "logs" / "_cef_probe.py"
     probe.write_text(
-        'from deepsecurity.alerts import CefSyslogSink, AlertEvent\n'
+        "from deepsecurity.alerts import CefSyslogSink, AlertEvent\n"
         'sink = CefSyslogSink("127.0.0.1", 55514, protocol="udp")\n'
         'sink.send(AlertEvent(kind="e2e.probe", severity="high",\n'
         '                     summary="e2e cef test", actor="e2e",\n'
@@ -1080,9 +1053,7 @@ def stage_K() -> tuple[str, str, str]:
     r = run_cmd([str(VENV_PY), str(probe)], timeout=15)
     if r.returncode != 0:
         stop_event.set()
-        raise StageFail(
-            f"cef probe exit {r.returncode}: {r.stdout[-200:]} {r.stderr[-200:]}"
-        )
+        raise StageFail(f"cef probe exit {r.returncode}: {r.stdout[-200:]} {r.stderr[-200:]}")
 
     # wait briefly for packet
     deadline = now() + 3.0
@@ -1118,7 +1089,7 @@ def stage_L() -> tuple[str, str, str]:
     try:
         with urllib.request.urlopen(f"{SERVER_URL}/metrics", timeout=3.0) as r:
             text = r.read().decode("utf-8", errors="replace")
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         raise StageFail(f"couldn't fetch /metrics for build_info: {e}") from e
     if "deepsec_build_info" not in text:
         raise StageFail("/metrics missing deepsec_build_info")
@@ -1141,17 +1112,17 @@ def stage_M() -> tuple[str, str, str]:
     # #6 ML pickle poisoning — must reject os.system pickle
     probe = REPO_ROOT / "logs" / "_ml_probe.py"
     probe.write_text(
-        'import os, pickle, tempfile, pathlib, sys\n'
-        'class _Rce:\n'
-        '    def __reduce__(self):\n'
+        "import os, pickle, tempfile, pathlib, sys\n"
+        "class _Rce:\n"
+        "    def __reduce__(self):\n"
         '        return (os.system, ("echo pwned",))\n'
-        'with tempfile.TemporaryDirectory() as td:\n'
+        "with tempfile.TemporaryDirectory() as td:\n"
         '    p = pathlib.Path(td) / "evil.joblib"\n'
         '    with p.open("wb") as f:\n'
-        '        pickle.dump(_Rce(), f)\n'
-        '    from deepsecurity.ml import MLClassifier\n'
-        '    clf = MLClassifier(model_path=p, confidence_threshold=0.8)\n'
-        '    v = clf.classify([1.0,2.0,3.0])\n'
+        "        pickle.dump(_Rce(), f)\n"
+        "    from deepsecurity.ml import MLClassifier\n"
+        "    clf = MLClassifier(model_path=p, confidence_threshold=0.8)\n"
+        "    v = clf.classify([1.0,2.0,3.0])\n"
         '    print("OK" if (not v.enabled and v.reason == "ml_disabled") else "FAIL")\n',
         encoding="utf-8",
     )
@@ -1165,14 +1136,17 @@ def stage_M() -> tuple[str, str, str]:
     # #8 quarantine collision — run the specific pytest case. No
     # ``--timeout`` flag: pytest-timeout isn't a pinned dep.
     r = run_cmd(
-        [str(VENV_PY), "-m", "pytest", "-q",
-         "tests/test_scanner.py::test_quarantine_no_collision_on_dup"],
+        [
+            str(VENV_PY),
+            "-m",
+            "pytest",
+            "-q",
+            "tests/test_scanner.py::test_quarantine_no_collision_on_dup",
+        ],
         timeout=60,
     )
     if r.returncode != 0:
-        raise StageFail(
-            f"#8 quarantine collision regressed:\n{r.stdout[-400:]}"
-        )
+        raise StageFail(f"#8 quarantine collision regressed:\n{r.stdout[-400:]}")
     verdicts.append(("#8 quarantine-collision", "PASS", "pytest green"))
 
     # #7 signature file swap — integrity snapshot covers signatures.txt
@@ -1212,7 +1186,8 @@ def stage_M() -> tuple[str, str, str]:
     # Run integrity check with the flipped env.
     r = run_cmd(
         [str(VENV_PY), "-m", "deepsecurity.cli", "integrity", "check"],
-        timeout=30, env=env,
+        timeout=30,
+        env=env,
     )
     out = r.stdout + r.stderr
     if "<policy>" not in out:
@@ -1230,8 +1205,11 @@ def stage_M() -> tuple[str, str, str]:
         run_cmd([str(VENV_PY), "-m", "deepsecurity.cli", "--help"], timeout=10).stdout
     )
     verdicts.append(
-        ("#5 db-wipe", "KNOWN-MISSING" if not has_backup else "PASS",
-         "backup-db CLI not yet shipped" if not has_backup else "backup-db present")
+        (
+            "#5 db-wipe",
+            "KNOWN-MISSING" if not has_backup else "PASS",
+            "backup-db CLI not yet shipped" if not has_backup else "backup-db present",
+        )
     )
     # Others from the 10-attack list: kernel-ceiling / by-design
     for idx, label in (
@@ -1272,7 +1250,7 @@ def stage_N() -> tuple[str, str, str]:
                             errors.append(f"status {r.status}")
                             return
                     _ = r.read()
-            except Exception as e:  # noqa: BLE001
+            except Exception as e:
                 with lock:
                     errors.append(type(e).__name__)
                     return
@@ -1338,9 +1316,7 @@ def stage_O() -> tuple[str, str, str]:
     r = ds("integrity", "check", timeout=30)
     out = r.stdout + r.stderr
     if '"status": "tampered"' not in out and "__init__.py" not in out:
-        raise StageFail(
-            f"tamper not detected on deepsecurity/__init__.py:\n{out[-400:]}"
-        )
+        raise StageFail(f"tamper not detected on deepsecurity/__init__.py:\n{out[-400:]}")
 
     # Restore and re-snapshot
     _restore_init()
@@ -1361,7 +1337,7 @@ def stage_P() -> tuple[str, str, str]:
     # stop the server we started in C
     try:
         ds("stop", timeout=20)
-    except Exception:  # noqa: BLE001
+    except Exception:
         pass
     write_report()
     return "OK", f"report → {REPORT_PATH}", ""
@@ -1395,8 +1371,7 @@ def write_report() -> None:
         evidence = r.evidence.replace("|", pipe_bs)
         notes = r.notes.replace("|", pipe_bs)
         lines.append(
-            f"| {r.code} {r.name} | {r.status} | {r.duration_s:.1f}s | "
-            f"{evidence} | {notes} |"
+            f"| {r.code} {r.name} | {r.status} | {r.duration_s:.1f}s | {evidence} | {notes} |"
         )
     lines.append("")
     REPORT_PATH.write_text("\n".join(lines) + "\n", encoding="utf-8")
@@ -1441,9 +1416,7 @@ def main() -> int:
         for code, name, fn in STAGES:
             if budget_left() < 2.0 and code != "P":
                 print(f"[{code}] SKIP — budget exhausted")
-                results.append(
-                    Result(code, name, "SKIP", "budget exhausted", "", 0.0)
-                )
+                results.append(Result(code, name, "SKIP", "budget exhausted", "", 0.0))
                 continue
             ok = run_stage(code, name, fn)
             if not ok and code != "P":
@@ -1458,7 +1431,7 @@ def main() -> int:
         if not any(r.code == "P" for r in results):
             try:
                 run_stage("P", "Cleanup + report", stage_P)
-            except Exception:  # noqa: BLE001
+            except Exception:
                 pass
         # Final summary
         ok = sum(1 for r in results if r.status == "OK")
@@ -1474,6 +1447,6 @@ def main() -> int:
 if __name__ == "__main__":
     try:
         sys.exit(main())
-    except Exception:  # noqa: BLE001
+    except Exception:
         traceback.print_exc()
         sys.exit(1)

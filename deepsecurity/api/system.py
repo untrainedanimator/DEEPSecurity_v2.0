@@ -3,6 +3,7 @@
 Distinguishes the DEEPSecurity process from system-wide numbers so an
 operator can tell "we're burning CPU" from "the rest of the OS is burning CPU".
 """
+
 from __future__ import annotations
 
 import os

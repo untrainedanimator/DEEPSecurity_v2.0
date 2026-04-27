@@ -4,16 +4,17 @@ Schema kept compatible with v2.0's deepscan.db so existing data stays readable.
 New columns added where needed for auditability (quarantine_path, sha256,
 and — in the SaaS build — agent_id).
 """
+
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import Boolean, DateTime, Float, Integer, String, Text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
 def _utcnow() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 class Base(DeclarativeBase):

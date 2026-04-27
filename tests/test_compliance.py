@@ -1,7 +1,8 @@
 """Compliance report generation + retention purge."""
+
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from deepsecurity.compliance import DateWindow, generate_report, purge_older_than
@@ -71,7 +72,7 @@ def test_generate_report_shape(initialized_db: Path) -> None:
     is an implementation detail that gives flaky red-bars without
     catching real bugs.
     """
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     _seed(session_started=now - timedelta(days=1), audit_ts=now - timedelta(days=1))
 
     window = DateWindow.last_days(7)
@@ -92,7 +93,7 @@ def test_generate_report_shape(initialized_db: Path) -> None:
 
 
 def test_purge_deletes_old_rows(initialized_db: Path) -> None:
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     _seed(session_started=now - timedelta(days=200), audit_ts=now - timedelta(days=200))
 
     counts = purge_older_than(days=90)
@@ -102,7 +103,7 @@ def test_purge_deletes_old_rows(initialized_db: Path) -> None:
 
 
 def test_purge_keeps_recent_rows(initialized_db: Path) -> None:
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     _seed(session_started=now - timedelta(days=2), audit_ts=now - timedelta(days=2))
 
     counts = purge_older_than(days=90)

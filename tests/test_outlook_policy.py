@@ -1,4 +1,5 @@
 """Outlook scanner: must never auto-delete, must never run on non-Windows."""
+
 from __future__ import annotations
 
 import sys

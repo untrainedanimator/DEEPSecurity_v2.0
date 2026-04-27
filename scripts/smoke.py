@@ -10,6 +10,7 @@ Exits 0 if every step passes, non-zero otherwise. Uses only the stdlib, so
 it runs even if the venv isn't activated — `python scripts/smoke.py` from
 the repo root is enough.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -22,9 +23,9 @@ import time
 import traceback
 import urllib.error
 import urllib.request
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable
-
+from typing import Any
 
 # Force UTF-8 on stdout/stderr so unicode arrows etc. render on Windows
 # (cp1252 consoles otherwise raise UnicodeEncodeError and fail the script).
@@ -215,8 +216,8 @@ def main() -> int:
     args = parser.parse_args()
 
     env_path = Path(args.env_file)
-    password = args.password or os.environ.get("DEEPSEC_DEV_PASSWORD") or _password_from_env(
-        env_path
+    password = (
+        args.password or os.environ.get("DEEPSEC_DEV_PASSWORD") or _password_from_env(env_path)
     )
 
     r = Runner(args.url, args.verbose)
@@ -246,7 +247,7 @@ def main() -> int:
     def _readyz() -> tuple[bool, str]:
         code, _, body = _request("GET", f"{r.url}/readyz")
         j = _json(body) or {}
-        detail = f"HTTP {code}  status={j.get('status')}  db={j.get('checks',{}).get('database')}"
+        detail = f"HTTP {code}  status={j.get('status')}  db={j.get('checks', {}).get('database')}"
         return code == 200 and j.get("status") == "ok", detail
 
     r.check("GET /readyz", _readyz)
@@ -277,7 +278,9 @@ def main() -> int:
             )
             if h not in headers
         ]
-        return len(missing) == 0, "all 5 security headers present" if not missing else f"missing: {missing}"
+        return len(
+            missing
+        ) == 0, "all 5 security headers present" if not missing else f"missing: {missing}"
 
     r.check("security headers", _headers)
 
@@ -414,7 +417,7 @@ def main() -> int:
         code, _, body = _request("GET", f"{r.url}/api/compliance/report?days=7", token=r.token)
         j = _json(body) or {}
         if code == 200 and "scans" in j and "detections" in j and "audit" in j:
-            return True, f"HTTP {code}  scans={j.get('scans',{}).get('total')}"
+            return True, f"HTTP {code}  scans={j.get('scans', {}).get('total')}"
         return False, _err_detail(code, body)
 
     r.check("GET /api/compliance/report", _report)
@@ -495,8 +498,7 @@ def main() -> int:
                 j = _json(body) or {}
                 if not j.get("running"):
                     return True, (
-                        f"scanned={j.get('scanned_count')}  "
-                        f"detections={j.get('total_detections')}"
+                        f"scanned={j.get('scanned_count')}  detections={j.get('total_detections')}"
                     )
                 time.sleep(0.5)
             return False, "timed out after 30s"
@@ -504,9 +506,7 @@ def main() -> int:
         r.check("scan completes within 30s", _wait_for_completion)
 
         def _session_has_results() -> tuple[bool, str]:
-            code, _, body = _request(
-                "GET", f"{r.url}/api/scanner/sessions?limit=1", token=r.token
-            )
+            code, _, body = _request("GET", f"{r.url}/api/scanner/sessions?limit=1", token=r.token)
             sessions = _json(body) or []
             if not sessions:
                 return False, "no sessions"
@@ -515,16 +515,12 @@ def main() -> int:
                 "GET", f"{r.url}/api/scanner/results?session_id={sid}", token=r.token
             )
             results = _json(body2) or []
-            return code2 == 200 and len(results) >= 1, (
-                f"session {sid}  {len(results)} results"
-            )
+            return code2 == 200 and len(results) >= 1, (f"session {sid}  {len(results)} results")
 
         r.check("session → results", _session_has_results)
 
         def _dlp_caught_the_key() -> tuple[bool, str]:
-            code, _, body = _request(
-                "GET", f"{r.url}/api/dlp/findings?limit=50", token=r.token
-            )
+            code, _, body = _request("GET", f"{r.url}/api/dlp/findings?limit=50", token=r.token)
             findings = _json(body) or []
             aws = [f for f in findings if f.get("pattern") == "aws_access_key_id"]
             return len(aws) >= 1, (

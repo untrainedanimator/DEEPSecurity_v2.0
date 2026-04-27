@@ -11,6 +11,7 @@ Security-relevant changes from the v2.0 original:
     - `settings.outlook_delete_on_detect` is frozen to False by the config
       layer. There is no runtime knob to turn it back on.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -130,7 +131,7 @@ def scan_outlook_mailbox(
                                 "action": action,
                             },
                         )
-                except Exception:  # noqa: BLE001 — per-message isolation
+                except Exception:
                     _log.exception("outlook.message_error")
 
     finally:

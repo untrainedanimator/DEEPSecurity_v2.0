@@ -1,4 +1,5 @@
 """Settings validation — we want the app to refuse to boot with bad config."""
+
 from __future__ import annotations
 
 import pytest

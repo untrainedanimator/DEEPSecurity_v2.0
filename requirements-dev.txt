@@ -7,3 +7,11 @@ pytest-mock>=3.14
 ruff>=0.8
 mypy>=1.13
 pre-commit>=4.0
+
+# DB migrations + extra runtime deps that are needed for v2.5+ features
+# (OIDC, distributed state). Listed in dev so contributors get a working
+# everything-on environment from `pip install -r requirements-dev.txt`.
+alembic>=1.13
+authlib>=1.3
+redis>=5.0
+fakeredis>=2.23  # in-memory Redis for tests; no live Redis required

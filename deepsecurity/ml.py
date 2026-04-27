@@ -18,6 +18,7 @@ joblib is imported lazily: if it is not installed, the classifier reports
 `enabled=False` and the scanner continues with signature + entropy only.
 That keeps the core install pure-Python and 3.14-friendly on Windows.
 """
+
 from __future__ import annotations
 
 import pickletools
@@ -31,6 +32,7 @@ _log = get_logger(__name__)
 
 try:  # pragma: no cover — optional
     import joblib  # type: ignore[import-not-found]
+
     _JOBLIB_AVAILABLE = True
 except ImportError:
     joblib = None  # type: ignore[assignment]
@@ -58,7 +60,9 @@ _ML_ALLOWED_PICKLE_MODULES: frozenset[str] = frozenset(
 )
 
 
-def _pickle_safe(path: Path, allowlist: frozenset[str] = _ML_ALLOWED_PICKLE_MODULES) -> tuple[bool, str | None]:
+def _pickle_safe(
+    path: Path, allowlist: frozenset[str] = _ML_ALLOWED_PICKLE_MODULES
+) -> tuple[bool, str | None]:
     """Walk the pickle's opcodes; refuse if it names a disallowed module.
 
     Returns (True, None) if every GLOBAL / STACK_GLOBAL reference targets

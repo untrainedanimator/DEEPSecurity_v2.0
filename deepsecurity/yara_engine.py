@@ -8,6 +8,7 @@ Rules directory is configured via DEEPSEC_YARA_RULES_DIR. Every `.yar`
 file in that directory is compiled on startup and cached. Recompile by
 restarting the process (or via `POST /api/yara/reload` — admin only).
 """
+
 from __future__ import annotations
 
 import threading
@@ -52,7 +53,7 @@ def _compile_with_timeout(
         try:
             compiled = yara.compile(filepaths=filepaths)  # type: ignore[attr-defined]
             result.append(compiled)
-        except BaseException as e:  # noqa: BLE001
+        except BaseException as e:
             crash.append(e)
         finally:
             done.set()
@@ -79,7 +80,7 @@ class YaraEngine:
 
     def __init__(self, rules_dir: Path | None) -> None:
         self._rules_dir = rules_dir
-        self._compiled: "yara.Rules | None" = None  # type: ignore[name-defined]
+        self._compiled: yara.Rules | None = None  # type: ignore[name-defined]
         self._load()
 
     @property

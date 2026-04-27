@@ -1,12 +1,13 @@
 """Compliance + retention API."""
+
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from flask import Blueprint, Response, jsonify, request
 
-from deepsecurity.api.auth import require_role
+from deepsecurity.api.auth import require_role, require_stepup
 from deepsecurity.compliance import (
     DateWindow,
     audit_csv_export,
@@ -24,7 +25,7 @@ compliance_bp = Blueprint("compliance", __name__)
 def _jsonable(obj: Any) -> Any:
     """Recursively coerce datetimes to ISO strings; dicts and lists preserved."""
     if isinstance(obj, datetime):
-        return obj.isoformat() if obj.tzinfo else obj.replace(tzinfo=timezone.utc).isoformat()
+        return obj.isoformat() if obj.tzinfo else obj.replace(tzinfo=UTC).isoformat()
     if isinstance(obj, dict):
         return {k: _jsonable(v) for k, v in obj.items()}
     if isinstance(obj, list):
@@ -59,6 +60,7 @@ def audit_csv() -> Any:
 
 @compliance_bp.route("/purge", methods=["POST"])
 @require_role("admin")
+@require_stepup()
 def purge() -> Any:
     """Enforce retention. Admin-only."""
     days = int(request.args.get("days", settings.retention_days))
@@ -151,9 +153,7 @@ def get_template(template_id: str) -> Any:
             pdf_bytes,
             mimetype="application/pdf",
             headers={
-                "Content-Disposition": (
-                    f"attachment; filename={template_id}-last-{days}d.pdf"
-                )
+                "Content-Disposition": (f"attachment; filename={template_id}-last-{days}d.pdf")
             },
         )
 

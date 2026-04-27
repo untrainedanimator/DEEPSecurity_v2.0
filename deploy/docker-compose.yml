@@ -11,6 +11,8 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      redis:
+        condition: service_healthy
     environment:
       DEEPSEC_ENV: production
       DEEPSEC_SECRET_KEY: ${DEEPSEC_SECRET_KEY:?set DEEPSEC_SECRET_KEY in .env}
@@ -31,6 +33,15 @@ services:
       DEEPSEC_DEV_USER: ${DEEPSEC_DEV_USER:-admin}
       DEEPSEC_DEV_PASSWORD: ${DEEPSEC_DEV_PASSWORD:?set a real password or wire your IdP}
       DEEPSEC_DEV_ROLE: ${DEEPSEC_DEV_ROLE:-admin}
+      # --- v2.5: distributed state via Redis (multi-replica safe) ---
+      DEEPSEC_STATE_BACKEND: ${DEEPSEC_STATE_BACKEND:-redis}
+      DEEPSEC_REDIS_URL: ${DEEPSEC_REDIS_URL:-redis://redis:6379/0}
+      # --- v2.5: OIDC identity provider (uncomment to enable) -------
+      # DEEPSEC_OIDC_ENABLED: "true"
+      # DEEPSEC_OIDC_DISCOVERY_URL: ${DEEPSEC_OIDC_DISCOVERY_URL}
+      # DEEPSEC_OIDC_CLIENT_ID: ${DEEPSEC_OIDC_CLIENT_ID}
+      # DEEPSEC_OIDC_CLIENT_SECRET: ${DEEPSEC_OIDC_CLIENT_SECRET}
+      # DEEPSEC_OIDC_REDIRECT_URI: ${DEEPSEC_OIDC_REDIRECT_URI}
     volumes:
       - deepsec-data:/app/data
       - deepsec-quarantine:/app/quarantine
@@ -63,8 +74,30 @@ services:
       timeout: 5s
       retries: 10
 
+  redis:
+    # v2.5: backs the distributed rate-limit + scan-lease so the API
+    # can run on more than one replica without double-scanning or
+    # multiplicative rate budgets. Pinned tag, not 'latest'.
+    image: redis:7-alpine
+    container_name: deepsec-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "no", "--save", "",
+              "--maxmemory", "128mb", "--maxmemory-policy", "allkeys-lru"]
+    volumes:
+      - deepsec-redis:/data
+    # Internal service — never expose Redis to the host network in prod.
+    # Uncomment only for local debugging.
+    # ports:
+    #   - "127.0.0.1:6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
 volumes:
   deepsec-data:
   deepsec-quarantine:
   deepsec-logs:
   deepsec-pgdata:
+  deepsec-redis:

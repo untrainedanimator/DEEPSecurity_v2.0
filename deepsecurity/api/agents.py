@@ -16,13 +16,13 @@ Two audiences in one blueprint, split by auth:
         POST   /api/agents/results         → report command outcome
         POST   /api/agents/events          → report unsolicited events
 """
+
 from __future__ import annotations
 
 import hashlib
 import json
-import socket
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from flask import Blueprint, g, jsonify, request
@@ -34,7 +34,7 @@ from deepsecurity.agent_auth import (
     issue_enrolment_token,
     require_agent,
 )
-from deepsecurity.api.auth import require_role
+from deepsecurity.api.auth import require_role, require_stepup
 from deepsecurity.audit import audit_log
 from deepsecurity.db import session_scope
 from deepsecurity.logging_config import get_logger
@@ -127,6 +127,7 @@ def get_agent(agent_id: str) -> Any:
 
 @agents_bp.route("/<string:agent_id>", methods=["DELETE"])
 @require_role("admin")
+@require_stepup()
 def revoke_agent(agent_id: str) -> Any:
     from flask_jwt_extended import get_jwt
 
@@ -239,7 +240,7 @@ def register() -> Any:
                 ip_address=ip,
                 labels=json.dumps(labels),
                 enabled=True,
-                registered_at=datetime.now(timezone.utc),
+                registered_at=datetime.now(UTC),
             )
         )
         # Mark which agent burned the token.
@@ -266,15 +267,13 @@ def heartbeat() -> Any:
         a = s.query(Agent).filter(Agent.id == agent.id).first()
         if a is None:
             return jsonify({"error": "agent_vanished"}), 404
-        a.last_heartbeat_at = datetime.now(timezone.utc)
+        a.last_heartbeat_at = datetime.now(UTC)
         a.last_heartbeat_summary = json.dumps(data)[:4000]
         # v2.4 FLEET_POLICY — emit the current policy_sha so the agent
         # can compare with its local copy and fetch the full policy on
         # mismatch. We return an empty string if no policy has ever been
         # set — the agent treats that as "no override, use DEEPSEC_* env".
-        policy_row = (
-            s.query(AgentPolicy).filter(AgentPolicy.agent_id == agent.id).first()
-        )
+        policy_row = s.query(AgentPolicy).filter(AgentPolicy.agent_id == agent.id).first()
         policy_sha = policy_row.policy_sha if policy_row else ""
     return jsonify({"ok": True, "policy_sha": policy_sha})
 
@@ -294,7 +293,7 @@ def pull_commands() -> Any:
             .limit(limit)
             .all()
         )
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         for r in rows:
             out.append(
                 {
@@ -330,7 +329,7 @@ def post_result() -> Any:
         if cmd is None:
             return jsonify({"error": "unknown_command"}), 404
         cmd.status = "completed" if success else "failed"
-        cmd.completed_at = datetime.now(timezone.utc)
+        cmd.completed_at = datetime.now(UTC)
         cmd.result = json.dumps(result)[:100_000]
 
     audit_log(
@@ -446,9 +445,7 @@ def set_agent_policy(agent_id: str) -> Any:
     # Per-field shape checks.
     if "exclusion_globs" in data and not isinstance(data["exclusion_globs"], str):
         return jsonify({"error": "bad_type", "field": "exclusion_globs"}), 400
-    if "dlp_severity_overrides" in data and not isinstance(
-        data["dlp_severity_overrides"], dict
-    ):
+    if "dlp_severity_overrides" in data and not isinstance(data["dlp_severity_overrides"], dict):
         return jsonify({"error": "bad_type", "field": "dlp_severity_overrides"}), 400
     if "autostart_scope" in data and data["autostart_scope"] not in (
         "",
@@ -479,7 +476,7 @@ def set_agent_policy(agent_id: str) -> Any:
         from flask_jwt_extended import get_jwt
 
         actor = str(get_jwt().get("sub", actor))
-    except Exception:  # noqa: BLE001
+    except Exception:
         pass
 
     with session_scope() as s:
@@ -487,9 +484,7 @@ def set_agent_policy(agent_id: str) -> Any:
         if agent is None:
             return jsonify({"error": "agent_not_found", "agent_id": agent_id}), 404
 
-        existing = (
-            s.query(AgentPolicy).filter(AgentPolicy.agent_id == agent_id).first()
-        )
+        existing = s.query(AgentPolicy).filter(AgentPolicy.agent_id == agent_id).first()
         if existing is None:
             s.add(
                 AgentPolicy(
@@ -527,9 +522,7 @@ def get_agent_policy(agent_id: str) -> Any:
         return jsonify({"error": "agent_id_mismatch"}), 403
 
     with session_scope() as s:
-        row = (
-            s.query(AgentPolicy).filter(AgentPolicy.agent_id == agent_id).first()
-        )
+        row = s.query(AgentPolicy).filter(AgentPolicy.agent_id == agent_id).first()
         if row is None:
             return jsonify({"policy_sha": "", "policy": {}}), 200
         return (

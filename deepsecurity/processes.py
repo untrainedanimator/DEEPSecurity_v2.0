@@ -12,6 +12,7 @@ hashes where readable) and flag:
 Every detection is tagged with MITRE ATT&CK technique IDs for downstream
 SOC tooling.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -23,7 +24,7 @@ import psutil
 from deepsecurity.audit import audit_log
 from deepsecurity.config import settings
 from deepsecurity.logging_config import get_logger
-from deepsecurity.mitre import PROCESS_REASON_TAGS, tags_for_reasons
+from deepsecurity.mitre import tags_for_reasons
 from deepsecurity.scanner import compute_sha256, load_signatures
 
 _log = get_logger(__name__)
@@ -252,7 +253,7 @@ def kill_process(pid: int, *, force: bool = False) -> dict[str, Any]:
             "pid": pid,
             "reason": "access_denied — run the server as admin / root to kill this PID",
         }
-    except Exception as exc:  # noqa: BLE001 — enforcement must not raise
+    except Exception as exc:
         _log.exception("process.kill_failed", pid=pid)
         return {"killed": False, "pid": pid, "reason": f"{type(exc).__name__}: {exc}"}
 
@@ -265,7 +266,7 @@ def scan_all_processes(
     """Walk every visible process and classify each."""
     import time
 
-    procs = [p for p in psutil.process_iter(["pid", "name", "exe", "cmdline", "username"])]
+    procs = list(psutil.process_iter(["pid", "name", "exe", "cmdline", "username"]))
     for p in procs:
         try:
             p.cpu_percent(interval=None)
@@ -314,7 +315,9 @@ def scan_all_processes(
             row["auto_kill_result"] = result
             audit_log(
                 actor="system",
-                action="process.auto_killed" if result.get("killed") else "process.auto_kill_failed",
+                action="process.auto_killed"
+                if result.get("killed")
+                else "process.auto_kill_failed",
                 status="ok" if result.get("killed") else "failed",
                 file_path=row.get("exe"),
                 details={

@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="UTF-16"?>
+<!--
+  Task Scheduler definition for the DEEPSecurity 24-hour soak.
+
+  How to import:
+    1. Open Task Scheduler (taskschd.msc).
+    2. Action -> Import Task...
+    3. Pick this file. Edit the trigger date if you want it to start later
+       than "next minute"; edit the user account in <Principal> to match
+       your username if it isn't "Dino".
+    4. Right-click the imported task and pick "Run" to start it on demand,
+       or wait for the trigger.
+
+  What this does:
+    - Runs once per day at 09:00 local time.
+    - Executes scripts\loop_24h.bat, which keeps running for 24 hours.
+    - Survives logoff (RunLevel=HighestAvailable, no UI, no idle stop).
+    - Cancels itself if the previous instance is still going (no overlap).
+
+  Edit the WorkingDirectory below if your install path is not
+  C:\Apps\DEEPSecurity_v2.0.
+-->
+<Task version="1.4" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+  <RegistrationInfo>
+    <Author>DEEPSecurity</Author>
+    <Description>DEEPSecurity 24-hour soak run — verify_v2_5 + e2e_full every 15 min.</Description>
+    <URI>\DEEPSecurity\loop_24h</URI>
+  </RegistrationInfo>
+  <Triggers>
+    <CalendarTrigger>
+      <StartBoundary>2026-04-27T09:00:00</StartBoundary>
+      <ExecutionTimeLimit>PT26H</ExecutionTimeLimit>
+      <Enabled>true</Enabled>
+      <ScheduleByDay>
+        <DaysInterval>1</DaysInterval>
+      </ScheduleByDay>
+    </CalendarTrigger>
+  </Triggers>
+  <Principals>
+    <Principal id="Author">
+      <UserId>Dino</UserId>
+      <LogonType>InteractiveToken</LogonType>
+      <RunLevel>HighestAvailable</RunLevel>
+    </Principal>
+  </Principals>
+  <Settings>
+    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
+    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
+    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
+    <AllowHardTerminate>true</AllowHardTerminate>
+    <StartWhenAvailable>true</StartWhenAvailable>
+    <RunOnlyIfNetworkAvailable>false</RunOnlyIfNetworkAvailable>
+    <IdleSettings>
+      <StopOnIdleEnd>false</StopOnIdleEnd>
+      <RestartOnIdle>false</RestartOnIdle>
+    </IdleSettings>
+    <AllowStartOnDemand>true</AllowStartOnDemand>
+    <Enabled>true</Enabled>
+    <Hidden>false</Hidden>
+    <RunOnlyIfIdle>false</RunOnlyIfIdle>
+    <DisallowStartOnRemoteAppSession>false</DisallowStartOnRemoteAppSession>
+    <UseUnifiedSchedulingEngine>true</UseUnifiedSchedulingEngine>
+    <WakeToRun>false</WakeToRun>
+    <ExecutionTimeLimit>PT26H</ExecutionTimeLimit>
+    <Priority>7</Priority>
+  </Settings>
+  <Actions Context="Author">
+    <Exec>
+      <Command>C:\Apps\DEEPSecurity_v2.0\scripts\loop_24h.bat</Command>
+      <Arguments>24 15</Arguments>
+      <WorkingDirectory>C:\Apps\DEEPSecurity_v2.0</WorkingDirectory>
+    </Exec>
+  </Actions>
+</Task>

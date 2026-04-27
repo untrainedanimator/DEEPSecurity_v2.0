@@ -12,6 +12,7 @@ so no DB migration is required.
 
 Reference: https://attack.mitre.org/  (v14, April 2024+)
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -19,10 +20,10 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True)
 class MitreTag:
-    technique_id: str       # e.g. "T1496"
-    name: str               # e.g. "Resource Hijacking"
-    tactic: str             # e.g. "Impact"
-    reference: str          # e.g. "https://attack.mitre.org/techniques/T1496/"
+    technique_id: str  # e.g. "T1496"
+    name: str  # e.g. "Resource Hijacking"
+    tactic: str  # e.g. "Impact"
+    reference: str  # e.g. "https://attack.mitre.org/techniques/T1496/"
 
 
 # ---------------------------------------------------------------------------

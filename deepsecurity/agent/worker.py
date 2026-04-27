@@ -9,6 +9,7 @@ Cycle:
     5. post result
     6. sleep
 """
+
 from __future__ import annotations
 
 import json
@@ -129,8 +130,9 @@ def execute_command(cmd: dict[str, Any]) -> tuple[bool, Any]:
 
     try:
         if kind == "scan":
-            from deepsecurity.scanner import scan_directory
             from pathlib import Path
+
+            from deepsecurity.scanner import scan_directory
 
             path = payload.get("path")
             if not path:
@@ -166,8 +168,8 @@ def execute_command(cmd: dict[str, Any]) -> tuple[bool, Any]:
             return True, controller.stop()
 
         if kind == "processes_scan":
-            from deepsecurity.processes import scan_all_processes
             from deepsecurity.config import settings
+            from deepsecurity.processes import scan_all_processes
 
             rows = scan_all_processes(
                 auto_kill_known_bad=settings.auto_kill_known_bad,
@@ -177,8 +179,17 @@ def execute_command(cmd: dict[str, Any]) -> tuple[bool, Any]:
                 {
                     k: v
                     for k, v in r.items()
-                    if k in {"pid", "name", "user", "cpu_percent", "rss_bytes",
-                             "label", "reasons", "mitre_tags"}
+                    if k
+                    in {
+                        "pid",
+                        "name",
+                        "user",
+                        "cpu_percent",
+                        "rss_bytes",
+                        "label",
+                        "reasons",
+                        "mitre_tags",
+                    }
                 }
                 for r in rows
             ]
@@ -210,7 +221,7 @@ def execute_command(cmd: dict[str, Any]) -> tuple[bool, Any]:
 
         return False, {"error": "unknown_kind", "kind": kind}
 
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         _log.exception("agent.command_failed", kind=kind)
         return False, {"error": "exception", "detail": f"{type(exc).__name__}: {exc}"}
 
@@ -252,10 +263,8 @@ def run(cfg: AgentConfig, *, interval_seconds: float = 30.0) -> None:
         # server's saying. Errors here are logged but never abort the
         # cycle: falling back to env-var defaults is always safe.
         try:
-            _maybe_fetch_and_apply_policy(
-                transport, cfg, str(hb_response.get("policy_sha", ""))
-            )
-        except Exception:  # noqa: BLE001
+            _maybe_fetch_and_apply_policy(transport, cfg, str(hb_response.get("policy_sha", "")))
+        except Exception:
             _log.exception("agent.policy.apply_failed")
 
         try:

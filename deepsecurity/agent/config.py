@@ -3,6 +3,7 @@
 Lives at ~/.deepsec-agent/config.json (or %USERPROFILE%\\.deepsec-agent\\config.json).
 Holds: server URL, agent_id, api_key. Never checked into source control.
 """
+
 from __future__ import annotations
 
 import json

@@ -12,6 +12,7 @@ The network fetch uses only the stdlib. If a site is unreachable, the
 feed is skipped and the operation is logged — we never partially corrupt
 the signature file.
 """
+
 from __future__ import annotations
 
 import csv
@@ -42,9 +43,7 @@ def _read_existing(path: Path) -> set[str]:
         return set()
     with path.open("r", encoding="utf-8") as f:
         return {
-            line.strip().lower()
-            for line in f
-            if line.strip() and not line.strip().startswith("#")
+            line.strip().lower() for line in f if line.strip() and not line.strip().startswith("#")
         }
 
 
@@ -62,7 +61,7 @@ def fetch_malwarebazaar(timeout: float = 30.0) -> FeedResult:
     """Full hash dump from AbuseCH MalwareBazaar (public, unauthenticated)."""
     url = "https://bazaar.abuse.ch/export/csv/full/"
     try:
-        with urllib.request.urlopen(url, timeout=timeout) as resp:  # noqa: S310 — HTTPS
+        with urllib.request.urlopen(url, timeout=timeout) as resp:
             raw = resp.read().decode("utf-8", errors="replace")
     except (urllib.error.URLError, TimeoutError) as exc:
         return FeedResult("malwarebazaar", 0, 0, 0, error=str(exc))
@@ -92,7 +91,7 @@ def fetch_otx_pulse(pulse_id: str, api_key: str, timeout: float = 30.0) -> FeedR
     url = f"https://otx.alienvault.com/api/v1/pulses/{pulse_id}/indicators"
     req = urllib.request.Request(url, headers={"X-OTX-API-KEY": api_key})
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:  # noqa: S310 — HTTPS
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
             import json as _json
 
             payload = _json.loads(resp.read().decode("utf-8"))
@@ -110,9 +109,7 @@ def fetch_otx_pulse(pulse_id: str, api_key: str, timeout: float = 30.0) -> FeedR
     added = hashes - existing
     final = existing | hashes
     _write_signatures(settings.signature_path, final)
-    return FeedResult(
-        f"otx:{pulse_id}", len(hashes), len(added), len(hashes) - len(added)
-    )
+    return FeedResult(f"otx:{pulse_id}", len(hashes), len(added), len(hashes) - len(added))
 
 
 def update_all_feeds(otx_pulses: list[tuple[str, str]] | None = None) -> list[FeedResult]:

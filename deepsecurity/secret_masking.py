@@ -9,6 +9,7 @@ to print into a terminal, a log file, or a support ticket screenshot.
 
 Pure stdlib; no side effects; safe to import anywhere.
 """
+
 from __future__ import annotations
 
 from urllib.parse import urlsplit, urlunsplit
@@ -51,6 +52,4 @@ def mask_database_url(url: str) -> str:
     if parts.port is not None:
         netloc += f":{parts.port}"
 
-    return urlunsplit(
-        (parts.scheme, netloc, parts.path, parts.query, parts.fragment)
-    )
+    return urlunsplit((parts.scheme, netloc, parts.path, parts.query, parts.fragment))

@@ -14,9 +14,10 @@ For DEEPSecurity, the evidence is:
       encrypt the DB ourselves; operators choose their storage backend)
     - Unique-actor count and role distribution in the audit log
 """
+
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy.orm import Session
@@ -25,7 +26,6 @@ from deepsecurity.compliance import DateWindow
 from deepsecurity.config import settings
 from deepsecurity.models import AuditLog
 from deepsecurity.secret_masking import mask_database_url
-
 
 TEMPLATE_ID = "hipaa-164-312-a-1"
 TITLE = "HIPAA §164.312(a)(1) — Access control"
@@ -51,9 +51,7 @@ def build(session: Session, window: DateWindow) -> dict[str, Any]:
     for a in audit:
         actor = a.actor or "unknown"
         by_actor_action.setdefault(actor, {})
-        by_actor_action[actor][a.action] = (
-            by_actor_action[actor].get(a.action, 0) + 1
-        )
+        by_actor_action[actor][a.action] = by_actor_action[actor].get(a.action, 0) + 1
 
     db_url = settings.database_url or ""
     encryption_note: str
@@ -81,7 +79,7 @@ def build(session: Session, window: DateWindow) -> dict[str, Any]:
         "title": TITLE,
         "control_ref": CONTROL_REF,
         "description": DESCRIPTION,
-        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "generated_at": datetime.now(UTC).isoformat(),
         "window": {
             "start": window.start.isoformat(),
             "end": window.end.isoformat(),

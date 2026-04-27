@@ -4,6 +4,7 @@ The scanner and every API route that accepts a user-supplied path MUST pass it
 through `resolve_under_root()` before doing anything with it. This is our
 defence against path traversal.
 """
+
 from __future__ import annotations
 
 from pathlib import Path

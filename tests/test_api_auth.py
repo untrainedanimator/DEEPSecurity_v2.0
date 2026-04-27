@@ -1,4 +1,5 @@
 """API auth: login, 401s, 403s, and the no-fallback guarantee."""
+
 from __future__ import annotations
 
 from pathlib import Path

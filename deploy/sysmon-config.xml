@@ -1,0 +1,164 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Sysmon configuration for DEEPSecurity v3.0 BEASTMODE.
+
+  Inspired by the SwiftOnSecurity baseline (https://github.com/SwiftOnSecurity/sysmon-config,
+  Apache-2.0). Curated down to what the DEEPSecurity correlator actually
+  consumes: process create / network connect / process terminate / image
+  load / CreateRemoteThread / ProcessAccess / file create / registry /
+  pipe / DnsQuery / ProcessTampering. Noise sources are excluded so the
+  Event Log doesn't grow uncontrollably.
+
+  Install:
+      sysmon64.exe -accepteula -i deploy\sysmon-config.xml
+
+  Replace config (live update, no reboot):
+      sysmon64.exe -c deploy\sysmon-config.xml
+
+  Uninstall:
+      sysmon64.exe -u
+
+  How DEEPSecurity uses this:
+      deepsecurity.realtime.sysmon.SysmonConsumer reads from
+      Microsoft-Windows-Sysmon/Operational; deepsecurity.realtime.correlator
+      runs the named rules across the events; deepsecurity.realtime.enforcer
+      applies the configured policy.
+-->
+<Sysmon schemaversion="4.90">
+  <HashAlgorithms>SHA256</HashAlgorithms>
+  <CheckRevocation/>
+
+  <EventFiltering>
+
+    <!-- Event 1: Process Create. We want everything — the correlator
+         relies on process_create to build the parent-chain tree, fire
+         R-PC-001/2/3 and R-LB-001. Exclude only the highest-volume
+         system internals to keep the log under control. -->
+    <RuleGroup name="Process Create" groupRelation="or">
+      <ProcessCreate onmatch="exclude">
+        <!-- Sysmon itself (don't surveil the surveillor). -->
+        <Image condition="is">C:\Windows\Sysmon.exe</Image>
+        <Image condition="is">C:\Windows\Sysmon64.exe</Image>
+        <!-- Highest-volume noise: Windows Search + Windows Defender's
+             own scan workers. They produce orders of magnitude more
+             events than anything an attacker triggers. -->
+        <Image condition="is">C:\Windows\System32\SearchIndexer.exe</Image>
+        <Image condition="is">C:\Windows\System32\SearchProtocolHost.exe</Image>
+        <Image condition="is">C:\Windows\System32\SearchFilterHost.exe</Image>
+        <ParentImage condition="is">C:\Program Files\Windows Defender\MsMpEng.exe</ParentImage>
+      </ProcessCreate>
+    </RuleGroup>
+
+    <!-- Event 3: Network Connection. R-NET-01 (beaconing) needs this.
+         Exclude broadcast / multicast / loopback / local-link to cut
+         noise without losing remote-egress visibility. -->
+    <RuleGroup name="Network Connection" groupRelation="or">
+      <NetworkConnect onmatch="exclude">
+        <DestinationIp condition="is">127.0.0.1</DestinationIp>
+        <DestinationIp condition="is">::1</DestinationIp>
+        <DestinationIp condition="begin with">169.254.</DestinationIp>
+        <DestinationIp condition="begin with">224.</DestinationIp>
+        <DestinationIp condition="begin with">239.</DestinationIp>
+        <!-- Sysmon's own telemetry. -->
+        <Image condition="is">C:\Windows\Sysmon.exe</Image>
+        <Image condition="is">C:\Windows\Sysmon64.exe</Image>
+      </NetworkConnect>
+    </RuleGroup>
+
+    <!-- Event 5: Process Terminate. Tiny events; we keep all of them so
+         the correlator's process tree can drop dead PIDs cleanly. -->
+    <RuleGroup name="Process Terminate" groupRelation="or">
+      <ProcessTerminate onmatch="exclude"/>
+    </RuleGroup>
+
+    <!-- Event 7: Image Loaded. R-IL-01 fires on suspicious DLL load
+         paths. We're SELECTIVE here — image_load is the noisiest
+         event Sysmon emits. Only forward DLLs loaded from
+         user-writable roots. -->
+    <RuleGroup name="Image Loaded" groupRelation="or">
+      <ImageLoad onmatch="include">
+        <!-- DLLs from user-writable folders are interesting per R-IL-01. -->
+        <ImageLoaded condition="contains">\AppData\Local\Temp\</ImageLoaded>
+        <ImageLoaded condition="contains">\Downloads\</ImageLoaded>
+        <ImageLoaded condition="contains">\Public\</ImageLoaded>
+        <ImageLoaded condition="contains">\ProgramData\</ImageLoaded>
+        <!-- Unsigned image loads (rare in well-managed environments). -->
+        <Signed condition="is">false</Signed>
+      </ImageLoad>
+    </RuleGroup>
+
+    <!-- Event 8: CreateRemoteThread. Code-injection signal. Keep all. -->
+    <RuleGroup name="CreateRemoteThread" groupRelation="or">
+      <CreateRemoteThread onmatch="exclude">
+        <!-- Defender's own scan engine creates threads in many processes;
+             those are not what we're looking for. -->
+        <SourceImage condition="is">C:\Program Files\Windows Defender\MsMpEng.exe</SourceImage>
+      </CreateRemoteThread>
+    </RuleGroup>
+
+    <!-- Event 10: ProcessAccess. High-value for credential-theft
+         detection (Mimikatz against lsass.exe). Filter aggressively —
+         every process accesses every other on a busy box. -->
+    <RuleGroup name="ProcessAccess" groupRelation="or">
+      <ProcessAccess onmatch="include">
+        <TargetImage condition="is">C:\Windows\System32\lsass.exe</TargetImage>
+        <GrantedAccess condition="is">0x1010</GrantedAccess>
+        <GrantedAccess condition="is">0x1410</GrantedAccess>
+        <GrantedAccess condition="is">0x1438</GrantedAccess>
+      </ProcessAccess>
+    </RuleGroup>
+
+    <!-- Event 11: File Create. R-RW-01 (write rate / ransomware) needs
+         this. Limit to user-data paths so we don't drown in
+         %TEMP% and browser cache. -->
+    <RuleGroup name="File Create" groupRelation="or">
+      <FileCreate onmatch="include">
+        <TargetFilename condition="contains">\Documents\</TargetFilename>
+        <TargetFilename condition="contains">\Desktop\</TargetFilename>
+        <TargetFilename condition="contains">\Pictures\</TargetFilename>
+        <TargetFilename condition="contains">\OneDrive\</TargetFilename>
+        <!-- Office / startup-folder writes are classic persistence. -->
+        <TargetFilename condition="contains">\Startup\</TargetFilename>
+        <TargetFilename condition="contains">\Office\Recent\</TargetFilename>
+      </FileCreate>
+    </RuleGroup>
+
+    <!-- Event 12 + 13: Registry. Persistence via Run keys, Services. -->
+    <RuleGroup name="Registry CreateKey/DeleteKey" groupRelation="or">
+      <RegistryEvent onmatch="include">
+        <TargetObject condition="contains">\CurrentVersion\Run</TargetObject>
+        <TargetObject condition="contains">\CurrentVersion\RunOnce</TargetObject>
+        <TargetObject condition="contains">\Services\</TargetObject>
+        <TargetObject condition="contains">Image File Execution Options</TargetObject>
+        <TargetObject condition="contains">\AppInit_DLLs</TargetObject>
+      </RegistryEvent>
+    </RuleGroup>
+
+    <!-- Events 17/18: Named Pipes — credential-theft tooling often
+         creates / connects pipes. Keep all by default; rare in
+         normal workloads. -->
+    <RuleGroup name="Pipe events" groupRelation="or">
+      <PipeEvent onmatch="exclude"/>
+    </RuleGroup>
+
+    <!-- Event 22: DnsQuery. Useful for the v3 DNS sinkhole's audit
+         trail and for matching against threat-intel feeds. -->
+    <RuleGroup name="DnsQuery" groupRelation="or">
+      <DnsQuery onmatch="exclude">
+        <!-- Excluding a few high-frequency Microsoft / Windows Update
+             telemetry endpoints to keep the volume reasonable. -->
+        <QueryName condition="end with">.windowsupdate.com</QueryName>
+        <QueryName condition="end with">.windows.com</QueryName>
+        <QueryName condition="end with">.microsoft.com</QueryName>
+        <QueryName condition="end with">.msn.com</QueryName>
+      </DnsQuery>
+    </RuleGroup>
+
+    <!-- Event 25: ProcessTampering. Process hollowing / image
+         replacement. Rare and high-fidelity — keep all. -->
+    <RuleGroup name="ProcessTampering" groupRelation="or">
+      <ProcessTampering onmatch="exclude"/>
+    </RuleGroup>
+
+  </EventFiltering>
+</Sysmon>

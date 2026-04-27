@@ -10,9 +10,10 @@ For DEEPSecurity the config-management evidence is:
       file / runtime policy changed since baseline?)
     - Policy-change events in the audit log
 """
+
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy.orm import Session
@@ -22,7 +23,6 @@ from deepsecurity.compliance import DateWindow
 from deepsecurity.config import settings
 from deepsecurity.integrity import check as integrity_check
 from deepsecurity.models import AuditLog
-
 
 TEMPLATE_ID = "iso27001-a-8-9"
 TITLE = "ISO 27001 A.8.9 — Configuration management"
@@ -59,14 +59,15 @@ def build(session: Session, window: DateWindow) -> dict[str, Any]:
             "snapshot_at": rep.snapshot_at,
             "snapshot_path": rep.snapshot_path,
         }
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         integrity = {
             "status": "error",
             "error": f"{type(exc).__name__}: {exc}",
         }
 
     policy_changes = [
-        a for a in audit
+        a
+        for a in audit
         if a.action in {"integrity.tampered", "integrity.policy_changed", "config.updated"}
     ]
 
@@ -75,7 +76,7 @@ def build(session: Session, window: DateWindow) -> dict[str, Any]:
         "title": TITLE,
         "control_ref": CONTROL_REF,
         "description": DESCRIPTION,
-        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "generated_at": datetime.now(UTC).isoformat(),
         "window": {
             "start": window.start.isoformat(),
             "end": window.end.isoformat(),

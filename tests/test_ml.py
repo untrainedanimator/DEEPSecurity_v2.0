@@ -7,6 +7,7 @@ achieve arbitrary command execution the moment an operator pointed
 before load and refuses anything outside {sklearn, numpy, scipy,
 joblib, collections, builtins, copyreg}. These tests guard that gate.
 """
+
 from __future__ import annotations
 
 import pickle
@@ -34,7 +35,7 @@ def test_pickle_safe_rejects_os_system_rce(tmp_path: Path) -> None:
     import os
 
     class _Rce:
-        def __reduce__(self):  # noqa: D401
+        def __reduce__(self):
             # This is exactly the PoC a real attacker would ship. The
             # pickle opcode stream names `os.system` as a GLOBAL, then
             # calls it on 'echo pwned' when unpickled. We never reach the

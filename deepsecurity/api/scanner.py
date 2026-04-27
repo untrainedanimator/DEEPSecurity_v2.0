@@ -3,6 +3,7 @@
 All paths coming in from the client go through resolve_under_root() — no
 bare OS calls on untrusted strings. All actions are audit-logged.
 """
+
 from __future__ import annotations
 
 import os
@@ -55,10 +56,7 @@ def _path_not_found_hint(target: Path, original: str) -> str:
         # Drive root missing → bad drive letter.
         anchor = Path(target.anchor) if target.anchor else None
         if anchor is not None and str(anchor) and not anchor.exists():
-            return (
-                f"drive {anchor} does not exist — check the letter "
-                f"(was: {original!r})"
-            )
+            return f"drive {anchor} does not exist — check the letter (was: {original!r})"
     if target.parent.exists() and target.parent != target:
         return (
             f"parent directory exists ({target.parent}) but {target.name!r} "
@@ -171,9 +169,7 @@ def status() -> Any:
     snap_out["ram"] = snap_out["system"]["ram_percent"]
 
     progress = (
-        int((snap["scanned_count"] / snap["total_files"]) * 100)
-        if snap["total_files"]
-        else 0
+        int((snap["scanned_count"] / snap["total_files"]) * 100) if snap["total_files"] else 0
     )
     snap_out["progress_percent"] = progress
     return jsonify(snap_out), 200
@@ -192,12 +188,7 @@ def cancel() -> Any:
 def list_sessions() -> Any:
     limit = min(int(request.args.get("limit", 25)), 200)
     with session_scope() as s:
-        rows = (
-            s.query(ScanSession)
-            .order_by(ScanSession.started_at.desc())
-            .limit(limit)
-            .all()
-        )
+        rows = s.query(ScanSession).order_by(ScanSession.started_at.desc()).limit(limit).all()
         return jsonify(
             [
                 {
